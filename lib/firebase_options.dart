@@ -52,7 +52,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyDzCSoFI12a4vaSL64NHJdUyOo1l6Xpf9Y',
-    appId: '1:409444266908:android:1f01b88d3c3b98376e0e59',
+    appId: '1:409444266908:android:bc5bed37cc2688936e0e59',
     messagingSenderId: '409444266908',
     projectId: 'zauntrack-c7a21',
     storageBucket: 'zauntrack-c7a21.appspot.com',
