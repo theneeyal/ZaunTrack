@@ -48,16 +48,14 @@ class _ScanScreenState extends State<ScanScreen> {
   void _toggleScanningStatus(bool value) {
     setState(() {
       isScanningCompleted = value;
-      // When toggling scanning status, re-evaluate the isLoaded status
       _updateIsLoadedStatus();
     });
   }
 
   void _updateIsLoadedStatus() {
-    // Set isLoaded to true only if all scanned items are in loaded items and scanning is marked as completed
     setState(() {
       isLoaded = isScanningCompleted &&
-                 scannedItems.every((scannedItem) => loadedItems.contains(scannedItem['barcode']));
+          scannedItems.every((scannedItem) => loadedItems.contains(scannedItem['barcode']));
     });
   }
 
@@ -70,7 +68,7 @@ class _ScanScreenState extends State<ScanScreen> {
           'category': selectedCategory!,
         });
         barcodeController.clear();
-        _updateIsLoadedStatus(); // Re-evaluate isLoaded status after adding a new scanned item
+        _updateIsLoadedStatus();
       });
     }
   }
@@ -92,7 +90,7 @@ class _ScanScreenState extends State<ScanScreen> {
       setState(() {
         loadedItems = List<String>.from(result['loadedItems']);
         isLoaded = result['isLoaded'] ?? isLoaded;
-        _updateIsLoadedStatus(); // Re-check isLoaded after returning from LoadScreen
+        _updateIsLoadedStatus();
       });
     }
   }
@@ -176,7 +174,9 @@ class _ScanScreenState extends State<ScanScreen> {
                 ),
               ),
               value: isScanningCompleted,
-              onChanged: _toggleScanningStatus,
+              onChanged: (value) {
+                _toggleScanningStatus(value);
+              },
               activeColor: Colors.green,
               inactiveThumbColor: Colors.redAccent,
               inactiveTrackColor: Colors.red[200],
