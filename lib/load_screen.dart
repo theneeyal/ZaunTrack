@@ -1,18 +1,17 @@
 import 'package:flutter/material.dart';
-import 'despatch_screen.dart';  // Import DespatchScreen
 
 class LoadScreen extends StatefulWidget {
   final String jobNumber;
   final List<Map<String, String>> scannedItems;
-  final List<String> loadedItems;  // Passed from ScanScreen
-  final bool isDespatched;  // Track if job is despatched
+  final List<String> loadedItems;
+  final bool isLoaded;
 
   const LoadScreen({
     super.key,
     required this.jobNumber,
     required this.scannedItems,
-    required this.loadedItems,  // Initialize with passed loaded items
-    this.isDespatched = false,  // Initialize with default false value
+    required this.loadedItems,
+    this.isLoaded = false, // Default to false if not specified
   });
 
   @override
@@ -21,84 +20,61 @@ class LoadScreen extends StatefulWidget {
 
 class _LoadScreenState extends State<LoadScreen> {
   final TextEditingController loadController = TextEditingController();
-  late List<String> loadedItems;  // Store loaded items
-  bool isDespatched = false;  // Track if job has been despatched
-  bool isCompletelyLoaded = false;  // Track if all items are loaded
+  late List<String> loadedItems;
+  bool isLoaded = false;
 
   @override
   void initState() {
     super.initState();
-    loadedItems = List.from(widget.loadedItems);  // Initialize with the passed list
-    isDespatched = widget.isDespatched;  // Initialize with the passed despatched status
-    isCompletelyLoaded = loadedItems.length == widget.scannedItems.length;  // Check if all items are loaded
+    loadedItems = List.from(widget.loadedItems);
+    isLoaded = widget.isLoaded; // Initialize with the value passed from the previous screen
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final Map<String, dynamic>? result =
-        ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+  void _addLoadItem() {
+    String barcode = loadController.text.trim();
+    if (barcode.isNotEmpty) {
+      bool isScanned = widget.scannedItems.any((item) => item['barcode'] == barcode);
 
-    if (result != null) {
-      setState(() {
-        loadedItems = List<String>.from(result['loadedItems'] ?? []);
-        isDespatched = result['isDespatched'] ?? false;
-        isCompletelyLoaded = loadedItems.length == widget.scannedItems.length;
-      });
+      if (isScanned) {
+        if (!loadedItems.contains(barcode)) {
+          setState(() {
+            loadedItems.add(barcode);
+            loadController.clear();
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Item $barcode added to loaded items')),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Item $barcode is already loaded')),
+          );
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Barcode $barcode not found in scanned items')),
+        );
+      }
     }
   }
 
-  // Function to navigate to DespatchScreen
-  void _navigateToDespatchScreen() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => DespatchScreen(
-          jobNumber: widget.jobNumber,
-          scannedItems: widget.scannedItems,
-          loadedItems: loadedItems,
-        ),
-      ),
-    ).then((result) {
-      if (result != null) {
-        setState(() {
-          loadedItems = List<String>.from(result['loadedItems'] ?? []);
-          isDespatched = result['isDespatched'] ?? false;
-          isCompletelyLoaded = loadedItems.length == widget.scannedItems.length;
-        });
-      }
-    });
-  }
-
-  // Function to mark the job as despatched when the check button is pressed
-  void _markAsDespatched() {
+  void _toggleIsLoaded(bool value) {
     setState(() {
-      isDespatched = true;
-      isCompletelyLoaded = true;  // Mark as completely loaded when despatched
+      isLoaded = value; // Only changes when manually toggled
     });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('✅ Job has been marked as despatched and completely loaded!'),
-        backgroundColor: Colors.green,
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
-    bool allItemsLoaded = loadedItems.length == widget.scannedItems.length;
-
     return Scaffold(
       appBar: AppBar(
         title: Text('Load Items for Job ${widget.jobNumber}'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () {
+            // Return isLoaded and loadedItems to previous screen
             Navigator.pop(context, {
-              'loadedItems': loadedItems,  // Pass back the updated loadedItems
-              'isDespatched': isDespatched,  // Pass back the despatched status
-              'isCompletelyLoaded': isCompletelyLoaded,  // Pass back the loaded status
+              'loadedItems': loadedItems,
+              'isLoaded': isLoaded,
             });
           },
         ),
@@ -111,147 +87,63 @@ class _LoadScreenState extends State<LoadScreen> {
             TextField(
               controller: loadController,
               decoration: InputDecoration(
-                labelText: 'Enter Barcode to Load',
+                labelText: 'Enter or Scan Load Item Barcode',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
                 filled: true,
                 fillColor: Colors.grey[200],
               ),
-              enabled: !isDespatched,  // Disable input if already despatched
             ),
             const SizedBox(height: 16),
             ElevatedButton(
-              onPressed: isDespatched
-                  ? null
-                  : () {
-                      String barcode = loadController.text.trim();
-                      if (barcode.isNotEmpty) {
-                        _loadItem(barcode);
-                      }
-                    },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: isDespatched ? Colors.grey : Colors.blue,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: const Text('Load Item', style: TextStyle(fontSize: 16)),
+              onPressed: _addLoadItem,
+              child: const Text('Add Load Item'),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
+            // Only show the toggle if all items are loaded
+            if (loadedItems.length == widget.scannedItems.length) ...[
+              const Text(
+                'All items are loaded!',
+                style: TextStyle(fontSize: 16, color: Colors.green, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 10),
+              SwitchListTile(
+                title: Text(
+                  isLoaded ? 'Loading Completed' : 'Mark Loading as Completed',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: isLoaded ? Colors.green : Colors.red,
+                  ),
+                ),
+                value: isLoaded,
+                onChanged: _toggleIsLoaded,
+                activeColor: Colors.green,
+                inactiveThumbColor: Colors.redAccent,
+                inactiveTrackColor: Colors.red[200],
+              ),
+            ],
+            const SizedBox(height: 20),
             const Text(
               'Loaded Items:',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             Expanded(
               child: ListView.builder(
                 itemCount: loadedItems.length,
                 itemBuilder: (context, index) {
-                  return Card(
-                    elevation: 3,
-                    margin: const EdgeInsets.symmetric(vertical: 6),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: ListTile(
-                      title: Text(
-                        'Loaded Barcode: ${loadedItems[index]}',
-                        style: const TextStyle(fontSize: 16),
-                      ),
-                    ),
+                  return ListTile(
+                    title: Text('Barcode: ${loadedItems[index]}'),
                   );
                 },
               ),
             ),
-            const SizedBox(height: 20),
-
-            // Show Check button only when all items are loaded and not despatched
-            if (allItemsLoaded && !isDespatched)
-              ElevatedButton(
-                onPressed: isDespatched
-                    ? null  // Disable the button when the job is already despatched
-                    : _markAsDespatched,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: isDespatched ? Colors.grey : Colors.green,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: const Text(
-                  '✔️ Mark as Despatched',
-                  style: TextStyle(fontSize: 18),
-                ),
-              ),
-
-            // Show message if already despatched
-            if (isDespatched)
-              const Padding(
-                padding: EdgeInsets.only(top: 16),
-                child: Text(
-                  '✅ Job has been marked as despatched!',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 18,
-                    color: Colors.green,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-
-            // Show message if all items are loaded but not yet despatched
-            if (allItemsLoaded && !isDespatched)
-              const Padding(
-                padding: EdgeInsets.only(top: 16),
-                child: Text(
-                  '⚠️ All items are loaded, but the job is not yet despatched!',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 18,
-                    color: Colors.orange,
-                  ),
-                ),
-              ),
           ],
         ),
       ),
     );
-  }
-
-  // Function to verify and load items
-  void _loadItem(String barcode) {
-    bool exists = widget.scannedItems.any((item) => item['barcode'] == barcode);
-
-    if (exists) {
-      if (!loadedItems.contains(barcode)) {
-        setState(() {
-          loadedItems.add(barcode);
-        });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('✅ Item $barcode loaded successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('⚠️ Item $barcode is already loaded!'),
-            backgroundColor: Colors.orangeAccent,
-          ),
-        );
-      }
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('❌ Error: Item $barcode was not scanned for Job ${widget.jobNumber}!'),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
-    }
-    loadController.clear();  // Clear input after checking
   }
 }

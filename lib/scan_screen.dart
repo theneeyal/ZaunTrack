@@ -1,17 +1,20 @@
 import 'package:flutter/material.dart';
-import 'load_screen.dart';  // Import the LoadScreen
+import 'load_screen.dart';
 
 class ScanScreen extends StatefulWidget {
   final String jobNumber;
-  final bool isCompleted;  // Job completion status
-  final List<Map<String, String>> scannedItems;  // List of scanned items passed from JobScreen
-  final List<String> loadedItems;  // <-- Add loadedItems to constructor
+  final bool isCompleted;
+  final List<Map<String, String>> scannedItems;
+  final List<String> loadedItems;
+  final bool isLoaded;
 
-  const ScanScreen({super.key, 
+  const ScanScreen({
+    super.key,
     required this.jobNumber,
     this.isCompleted = false,
     required this.scannedItems,
-    required this.loadedItems,  // <-- Initialize with passed loaded items
+    required this.loadedItems,
+    required this.isLoaded,
   });
 
   @override
@@ -20,31 +23,78 @@ class ScanScreen extends StatefulWidget {
 
 class _ScanScreenState extends State<ScanScreen> {
   final TextEditingController barcodeController = TextEditingController();
-  String? selectedCategory; // Category selected by user
-  late List<Map<String, String>> scannedItems;  // List of scanned items
-  late List<String> loadedItems;  // Loaded items list
-  bool isScanningCompleted = false;  // Track if scanning is completed
+  String? selectedCategory;
+  late List<Map<String, String>> scannedItems;
+  late List<String> loadedItems;
+  bool isScanningCompleted = false;
+  bool isLoaded = false;
 
   @override
   void initState() {
     super.initState();
-    isScanningCompleted = widget.isCompleted;  // Set initial status from passed value
-    scannedItems = List.from(widget.scannedItems);  // Initialize scannedItems from the passed list
-    loadedItems = List.from(widget.loadedItems);  // Initialize loadedItems from the passed list
+    isScanningCompleted = widget.isCompleted;
+    isLoaded = widget.isLoaded;
+    scannedItems = List.from(widget.scannedItems);
+    loadedItems = List.from(widget.loadedItems);
+    _updateIsLoadedStatus(); // Initial check to update isLoaded based on items and isCompleted
   }
 
-  // Function to handle category selection
   void _selectCategory(String category) {
     setState(() {
       selectedCategory = category;
     });
   }
 
-  // Function to toggle scanning status
   void _toggleScanningStatus(bool value) {
     setState(() {
       isScanningCompleted = value;
+      // When toggling scanning status, re-evaluate the isLoaded status
+      _updateIsLoadedStatus();
     });
+  }
+
+  void _updateIsLoadedStatus() {
+    // Set isLoaded to true only if all scanned items are in loaded items and scanning is marked as completed
+    setState(() {
+      isLoaded = isScanningCompleted &&
+                 scannedItems.every((scannedItem) => loadedItems.contains(scannedItem['barcode']));
+    });
+  }
+
+  void _addScannedItem() {
+    String barcode = barcodeController.text.trim();
+    if (barcode.isNotEmpty && selectedCategory != null) {
+      setState(() {
+        scannedItems.add({
+          'barcode': barcode,
+          'category': selectedCategory!,
+        });
+        barcodeController.clear();
+        _updateIsLoadedStatus(); // Re-evaluate isLoaded status after adding a new scanned item
+      });
+    }
+  }
+
+  void _openLoadScreen() async {
+    var result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => LoadScreen(
+          jobNumber: widget.jobNumber,
+          scannedItems: scannedItems,
+          loadedItems: loadedItems,
+          isLoaded: isLoaded,
+        ),
+      ),
+    );
+
+    if (result != null) {
+      setState(() {
+        loadedItems = List<String>.from(result['loadedItems']);
+        isLoaded = result['isLoaded'] ?? isLoaded;
+        _updateIsLoadedStatus(); // Re-check isLoaded after returning from LoadScreen
+      });
+    }
   }
 
   @override
@@ -57,8 +107,9 @@ class _ScanScreenState extends State<ScanScreen> {
           onPressed: () {
             Navigator.pop(context, {
               'isCompleted': isScanningCompleted,
-              'scannedItems': scannedItems,  // Pass updated scannedItems back to JobScreen
-              'loadedItems': loadedItems,    // <-- Pass loadedItems back to JobScreen
+              'scannedItems': scannedItems,
+              'loadedItems': loadedItems,
+              'isLoaded': isLoaded,
             });
           },
         ),
@@ -68,7 +119,6 @@ class _ScanScreenState extends State<ScanScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Input field for barcode with rounded corners and background color
             TextField(
               controller: barcodeController,
               decoration: InputDecoration(
@@ -79,47 +129,31 @@ class _ScanScreenState extends State<ScanScreen> {
                 filled: true,
                 fillColor: Colors.grey[200],
               ),
-              enabled: !isScanningCompleted, // Disable if scanning is completed
+              enabled: !isScanningCompleted,
             ),
             const SizedBox(height: 16),
-
-            // Message to choose type of item
             const Text(
               "Please choose the type of item to be scanned:",
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-
-            // 2x2 Grid of buttons using Wrap widget
             Wrap(
-              spacing: 8.0, // Horizontal space between buttons
-              runSpacing: 8.0, // Vertical space between buttons
-              alignment: WrapAlignment.center, // Center-align the buttons
+              spacing: 8.0,
+              runSpacing: 8.0,
+              alignment: WrapAlignment.center,
               children: [
                 _buildCategoryButton('Mesh'),
                 _buildCategoryButton('Posts'),
                 _buildCategoryButton('Gates'),
                 _buildCategoryButton('Fixings'),
+                _buildCategoryButton('Other'),
               ],
             ),
             const SizedBox(height: 16),
-
-            // Button to add the item, only enabled if a category is selected and scanning is not completed
             ElevatedButton(
               onPressed: selectedCategory == null || isScanningCompleted
-                  ? null // Disable button if no category is selected or scanning is completed
-                  : () {
-                      String barcode = barcodeController.text.trim();
-                      if (barcode.isNotEmpty && selectedCategory != null) {
-                        setState(() {
-                          scannedItems.add({
-                            'barcode': barcode,
-                            'category': selectedCategory!, // Add selected category
-                          });
-                          barcodeController.clear();  // Clear after adding
-                        });
-                      }
-                    },
+                  ? null
+                  : _addScannedItem,
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
@@ -128,15 +162,10 @@ class _ScanScreenState extends State<ScanScreen> {
               ),
               child: const Text(
                 'Add Item',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.black, // Set text color to white
-                ),
+                style: TextStyle(fontSize: 16, color: Colors.black),
               ),
             ),
             const SizedBox(height: 16),
-
-            // Toggle button to mark scanning status
             SwitchListTile(
               title: Text(
                 isScanningCompleted ? 'Scanning Completed.' : 'Scanning in Progress',
@@ -147,23 +176,17 @@ class _ScanScreenState extends State<ScanScreen> {
                 ),
               ),
               value: isScanningCompleted,
-              onChanged: (bool value) {
-                _toggleScanningStatus(value);
-              },
+              onChanged: _toggleScanningStatus,
               activeColor: Colors.green,
               inactiveThumbColor: Colors.redAccent,
               inactiveTrackColor: Colors.red[200],
             ),
             const SizedBox(height: 24),
-
-            // Scanned Items List Title
             const Text(
               'Scanned Items:',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
-
-            // Display scanned items with improved styling
             Expanded(
               child: ListView.builder(
                 itemCount: scannedItems.length,
@@ -189,32 +212,10 @@ class _ScanScreenState extends State<ScanScreen> {
               ),
             ),
             const SizedBox(height: 16),
-
-            // Button to navigate to the LoadScreen
             ElevatedButton(
-              onPressed: isScanningCompleted
-                  ? () async {
-                      var result = await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => LoadScreen(
-                            jobNumber: widget.jobNumber,
-                            scannedItems: scannedItems,  // Pass scanned items to LoadScreen
-                            loadedItems: loadedItems,    // <-- Pass the existing loadedItems to LoadScreen
-                          ),
-                        ),
-                      );
-
-                      // Update the loadedItems after returning from LoadScreen
-                      if (result != null) {
-                        setState(() {
-                          loadedItems = List<String>.from(result['loadedItems']);  // Update loadedItems from LoadScreen result
-                        });
-                      }
-                    }
-                  : null, // Disable button if scanning is not completed
+              onPressed: isScanningCompleted ? _openLoadScreen : null,
               style: ElevatedButton.styleFrom(
-                backgroundColor: isScanningCompleted ? Colors.blue : Colors.grey, // Change button color based on scanning status
+                backgroundColor: isScanningCompleted ? Colors.blue : Colors.grey,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -222,10 +223,7 @@ class _ScanScreenState extends State<ScanScreen> {
               ),
               child: const Text(
                 'Start Loading',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.white, // Set text color to white
-                ),
+                style: TextStyle(fontSize: 16, color: Colors.white),
               ),
             ),
           ],
@@ -234,13 +232,12 @@ class _ScanScreenState extends State<ScanScreen> {
     );
   }
 
-  // Widget to build each category button
   Widget _buildCategoryButton(String category) {
     return ElevatedButton(
       onPressed: isScanningCompleted ? null : () => _selectCategory(category),
       style: ElevatedButton.styleFrom(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-        backgroundColor: selectedCategory == category ? Colors.blue : Colors.grey[300],  // Highlight selected category
+        backgroundColor: selectedCategory == category ? Colors.blue : Colors.grey[300],
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
         ),
@@ -248,7 +245,7 @@ class _ScanScreenState extends State<ScanScreen> {
       child: Text(
         category,
         style: TextStyle(
-          color: selectedCategory == category ? Colors.white : Colors.black,  // Change text color when selected
+          color: selectedCategory == category ? Colors.white : Colors.black,
           fontSize: 14,
         ),
       ),
