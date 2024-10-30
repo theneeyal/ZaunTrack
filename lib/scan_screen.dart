@@ -5,7 +5,7 @@ class ScanScreen extends StatefulWidget {
   final String jobNumber;
   final bool isCompleted;
   final List<Map<String, String>> scannedItems;
-  final List<String> loadedItems;
+  final List<Map<String, String>> loadedItems;
   final bool isLoaded;
 
   const ScanScreen({
@@ -25,7 +25,7 @@ class _ScanScreenState extends State<ScanScreen> {
   final TextEditingController barcodeController = TextEditingController();
   String? selectedCategory;
   late List<Map<String, String>> scannedItems;
-  late List<String> loadedItems;
+  late List<Map<String, String>> loadedItems;
   bool isScanningCompleted = false;
   bool isLoaded = false;
 
@@ -39,11 +39,27 @@ class _ScanScreenState extends State<ScanScreen> {
     _updateIsLoadedStatus(); // Initial check to update isLoaded based on items and isCompleted
   }
 
-  void _selectCategory(String category) {
+void _selectCategory(String category) {
+  String barcode = barcodeController.text.trim();
+  bool alreadyScanned = scannedItems.any((item) => item['barcode'] == barcode);
+
+  if (barcode.isNotEmpty && !alreadyScanned) {
     setState(() {
-      selectedCategory = category;
+      selectedCategory = category; // Select category
+      scannedItems.add({
+        'barcode': barcode,
+        'category': category,
+      });
+      barcodeController.clear(); // Clear barcode input
+      selectedCategory = null; // Reset category selection
+      _updateIsLoadedStatus();
     });
+  } else if (alreadyScanned) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Item with barcode $barcode has already been scanned.')),
+    );
   }
+}
 
   void _toggleScanningStatus(bool value) {
     setState(() {
@@ -55,22 +71,17 @@ class _ScanScreenState extends State<ScanScreen> {
   void _updateIsLoadedStatus() {
     setState(() {
       isLoaded = isScanningCompleted &&
-          scannedItems.every((scannedItem) => loadedItems.contains(scannedItem['barcode']));
+          scannedItems.every((scannedItem) => loadedItems.any((loadedItem) => loadedItem['barcode'] == scannedItem['barcode']));
     });
   }
 
-  void _addScannedItem() {
-    String barcode = barcodeController.text.trim();
-    if (barcode.isNotEmpty && selectedCategory != null) {
-      setState(() {
-        scannedItems.add({
-          'barcode': barcode,
-          'category': selectedCategory!,
-        });
-        barcodeController.clear();
-        _updateIsLoadedStatus();
-      });
+  // Helper function to count occurrences of each category
+  Map<String, int> _getScannedCategoryCounts() {
+    Map<String, int> categoryCounts = {};
+    for (var item in scannedItems) {
+      categoryCounts[item['category']!] = (categoryCounts[item['category']!] ?? 0) + 1;
     }
+    return categoryCounts;
   }
 
   void _openLoadScreen() async {
@@ -88,7 +99,7 @@ class _ScanScreenState extends State<ScanScreen> {
 
     if (result != null) {
       setState(() {
-        loadedItems = List<String>.from(result['loadedItems']);
+        loadedItems = List<Map<String, String>>.from(result['loadedItems']);
         isLoaded = result['isLoaded'] ?? isLoaded;
         _updateIsLoadedStatus();
       });
@@ -143,25 +154,11 @@ class _ScanScreenState extends State<ScanScreen> {
                 _buildCategoryButton('Mesh'),
                 _buildCategoryButton('Posts'),
                 _buildCategoryButton('Gates'),
+                _buildCategoryButton('Clamp-bars'),
+                _buildCategoryButton('Railings'),
                 _buildCategoryButton('Fixings'),
                 _buildCategoryButton('Other'),
               ],
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: selectedCategory == null || isScanningCompleted
-                  ? null
-                  : _addScannedItem,
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: const Text(
-                'Add Item',
-                style: TextStyle(fontSize: 16, color: Colors.black),
-              ),
             ),
             const SizedBox(height: 16),
             SwitchListTile(
@@ -182,33 +179,21 @@ class _ScanScreenState extends State<ScanScreen> {
               inactiveTrackColor: Colors.red[200],
             ),
             const SizedBox(height: 24),
-            const Text(
-              'Scanned Items:',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            Text(
+              '${scannedItems.length} Items Scanned:',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             Expanded(
-              child: ListView.builder(
-                itemCount: scannedItems.length,
-                itemBuilder: (context, index) {
-                  return Card(
-                    elevation: 3,
-                    margin: const EdgeInsets.symmetric(vertical: 6),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: ListTile(
-                      title: Text(
-                        'Barcode: ${scannedItems[index]['barcode']}',
-                        style: const TextStyle(fontSize: 16),
-                      ),
-                      subtitle: Text(
-                        'Category: ${scannedItems[index]['category']}',
-                        style: TextStyle(color: Colors.grey[600]),
-                      ),
+              child: ListView(
+                children: _getScannedCategoryCounts().entries.map((entry) {
+                  return ListTile(
+                    title: Text(
+                      '${entry.value} x ${entry.key}',
+                      style: const TextStyle(fontSize: 16),
                     ),
                   );
-                },
+                }).toList(),
               ),
             ),
             const SizedBox(height: 16),
@@ -252,3 +237,4 @@ class _ScanScreenState extends State<ScanScreen> {
     );
   }
 }
+

@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class LoadScreen extends StatefulWidget {
   final String jobNumber;
   final List<Map<String, String>> scannedItems;
-  final List<String> loadedItems;
+  final List<Map<String, String>> loadedItems;
   final bool isLoaded;
 
   const LoadScreen({
@@ -11,7 +13,7 @@ class LoadScreen extends StatefulWidget {
     required this.jobNumber,
     required this.scannedItems,
     required this.loadedItems,
-    this.isLoaded = false, // Default to false if not specified
+    this.isLoaded = false,
   });
 
   @override
@@ -20,47 +22,121 @@ class LoadScreen extends StatefulWidget {
 
 class _LoadScreenState extends State<LoadScreen> {
   final TextEditingController loadController = TextEditingController();
-  late List<String> loadedItems;
+  late List<Map<String, String>> loadedItems;
+  late Map<String, int> scannedCategoryCount;
+  late Map<String, int> loadedCategoryCount;
   bool isLoaded = false;
+  String? currentCategory;
+  Timer? _debounce;
 
   @override
   void initState() {
     super.initState();
-    loadedItems = List.from(widget.loadedItems);
-    isLoaded = widget.isLoaded; // Initialize with the value passed from the previous screen
+    loadedItems = List<Map<String, String>>.from(widget.loadedItems);
+    isLoaded = widget.isLoaded;
+    _initializeCategoryCounts();
+    loadController.addListener(_onBarcodeChanged); // Set up listener for input debounce
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel(); // Cancel the debounce timer if active
+    loadController.removeListener(_onBarcodeChanged); // Remove listener to prevent memory leaks
+    loadController.dispose();
+    super.dispose();
+  }
+
+  void _initializeCategoryCounts() {
+    scannedCategoryCount = {};
+    for (var item in widget.scannedItems) {
+      scannedCategoryCount[item['category']!] =
+          (scannedCategoryCount[item['category']!] ?? 0) + 1;
+    }
+
+    loadedCategoryCount = {};
+    for (var item in loadedItems) {
+      String category = item['category']!;
+      loadedCategoryCount[category] = (loadedCategoryCount[category] ?? 0) + 1;
+    }
+  }
+
+  Future<void> _updateFirebase() async {
+    final jobDoc = FirebaseFirestore.instance.collection('jobs').doc(widget.jobNumber);
+
+    List<Map<String, String>> loadedItemsForFirebase = loadedItems.map((item) {
+      return {
+        'barcode': item['barcode'] ?? '',
+        'category': item['category'] ?? '',
+      };
+    }).toList();
+
+    try {
+      var docSnapshot = await jobDoc.get();
+      if (docSnapshot.exists) {
+        await jobDoc.update({
+          'loadedItems': loadedItemsForFirebase,
+          'isLoaded': isLoaded,
+        });
+        print("Firebase update successful.");
+      } else {
+        print("Document with jobNumber ${widget.jobNumber} does not exist.");
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Job with number ${widget.jobNumber} not found in Firebase.')),
+        );
+      }
+    } catch (e) {
+      print("Error updating Firebase: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update job in Firebase: $e')),
+      );
+    }
+  }
+
+  void _onBarcodeChanged() {
+    // Debounce to wait for user to finish typing
+    if (_debounce?.isActive ?? false) _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 500), () {
+      if (loadController.text.trim().isNotEmpty) {
+        _addLoadItem(); // Call the barcode check only after 500ms of inactivity
+      }
+    });
   }
 
   void _addLoadItem() {
     String barcode = loadController.text.trim();
-    if (barcode.isNotEmpty) {
-      bool isScanned = widget.scannedItems.any((item) => item['barcode'] == barcode);
 
-      if (isScanned) {
-        if (!loadedItems.contains(barcode)) {
-          setState(() {
-            loadedItems.add(barcode);
-            loadController.clear();
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Item $barcode added to loaded items')),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Item $barcode is already loaded')),
-          );
-        }
-      } else {
+    if (barcode.isNotEmpty) {
+      // Find the scanned item by barcode
+      var scannedItem = widget.scannedItems.firstWhere(
+          (item) => item['barcode'] == barcode, orElse: () => {});
+
+      // Ensure the scanned item is found and not already loaded
+      if (scannedItem.isNotEmpty && !loadedItems.any((item) => item['barcode'] == barcode)) {
+        setState(() {
+          String category = scannedItem['category']!;
+          loadedItems.add({'barcode': barcode, 'category': category});
+          loadedCategoryCount[category] = (loadedCategoryCount[category] ?? 0) + 1;
+          loadController.clear();
+          currentCategory = category;
+        });
+        _updateFirebase(); // Update Firebase after adding item
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Item $barcode added to loaded items')),
+        );
+      } else if (scannedItem.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Barcode $barcode not found in scanned items')),
         );
+        currentCategory = null;
       }
     }
   }
 
   void _toggleIsLoaded(bool value) {
     setState(() {
-      isLoaded = value; // Only changes when manually toggled
+      isLoaded = value;
     });
+    _updateFirebase();
   }
 
   @override
@@ -71,7 +147,6 @@ class _LoadScreenState extends State<LoadScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () {
-            // Return isLoaded and loadedItems to previous screen
             Navigator.pop(context, {
               'loadedItems': loadedItems,
               'isLoaded': isLoaded,
@@ -95,13 +170,22 @@ class _LoadScreenState extends State<LoadScreen> {
                 fillColor: Colors.grey[200],
               ),
             ),
+            const SizedBox(height: 8),
+            if (currentCategory != null)
+              Text(
+                'Category: $currentCategory',
+                style: const TextStyle(fontSize: 16, color: Colors.blueGrey),
+              ),
             const SizedBox(height: 16),
             ElevatedButton(
-              onPressed: _addLoadItem,
+              onPressed: () {
+                if (loadController.text.trim().isNotEmpty) {
+                  _addLoadItem();
+                }
+              },
               child: const Text('Add Load Item'),
             ),
             const SizedBox(height: 20),
-            // Only show the toggle if all items are loaded
             if (loadedItems.length == widget.scannedItems.length) ...[
               const Text(
                 'All items are loaded!',
@@ -127,18 +211,22 @@ class _LoadScreenState extends State<LoadScreen> {
             ],
             const SizedBox(height: 20),
             const Text(
-              'Loaded Items:',
+              'Loading Status:',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 10),
             Expanded(
-              child: ListView.builder(
-                itemCount: loadedItems.length,
-                itemBuilder: (context, index) {
+              child: ListView(
+                children: scannedCategoryCount.keys.map((category) {
+                  int loadedCount = loadedCategoryCount[category] ?? 0;
+                  int totalCount = scannedCategoryCount[category]!;
                   return ListTile(
-                    title: Text('Barcode: ${loadedItems[index]}'),
+                    title: Text(
+                      '$loadedCount/$totalCount $category Loaded',
+                      style: const TextStyle(fontSize: 16),
+                    ),
                   );
-                },
+                }).toList(),
               ),
             ),
           ],

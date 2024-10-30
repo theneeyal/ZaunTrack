@@ -44,7 +44,7 @@ class _JobScreenState extends State<JobScreen> {
 
   Stream<QuerySnapshot> _jobStream = FirebaseFirestore.instance
       .collection('jobs')
-      .orderBy('jobNumber')
+      .orderBy('lastModified', descending: true)
       .snapshots();
 
   @override
@@ -66,13 +66,14 @@ class _JobScreenState extends State<JobScreen> {
           SnackBar(content: Text('Job $jobNumber already exists.')),
         );
       } else {
-        await jobsCollection.add({
+        await jobsCollection.doc(jobNumber).set({
           'jobNumber': jobNumber,
           'isCompleted': false,
           'isLoaded': false,
           'isDespatched': false,
           'loadedItems': [],
           'scannedItems': [],
+          'lastModified': FieldValue.serverTimestamp(),
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Created new Job: $jobNumber')),
@@ -86,24 +87,63 @@ class _JobScreenState extends State<JobScreen> {
     }
   }
 
+  Future<void> _updateFirebaseJob(String jobId, Map<String, dynamic> data) async {
+    try {
+      data['lastModified'] = FieldValue.serverTimestamp();
+      await jobsCollection.doc(jobId).update(data);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update job in Firebase: $e')),
+      );
+    }
+  }
+
   void _liveSearchJob(String query) {
     setState(() {
       if (query.isEmpty) {
-        _jobStream = jobsCollection.orderBy('jobNumber').snapshots();
+        _jobStream = jobsCollection
+            .orderBy('lastModified', descending: true)
+            .snapshots();
       } else {
         _jobStream = jobsCollection
             .where('jobNumber', isGreaterThanOrEqualTo: query)
-            .where('jobNumber', isLessThan: query + 'z')
+            .where('jobNumber', isLessThan: '${query}z')
+            .orderBy('lastModified', descending: true)
             .snapshots();
       }
     });
   }
 
   Future<void> _deleteJob(String jobId) async {
-    await jobsCollection.doc(jobId).delete();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Job deleted successfully.')),
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Confirm Deletion'),
+          content: const Text('Are you sure you want to delete this job? This action cannot be undone.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false), // Cancel deletion
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true), // Confirm deletion
+              child: const Text(
+                'Delete',
+                style: TextStyle(color: Colors.red),
+              ),
+            ),
+          ],
+        );
+      },
     );
+
+    if (confirm == true) {
+      await jobsCollection.doc(jobId).delete();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Job deleted successfully.')),
+      );
+    }
   }
 
   void _openJobScreen(DocumentSnapshot job, {bool isEdit = false}) async {
@@ -114,10 +154,11 @@ class _JobScreenState extends State<JobScreen> {
     List<Map<String, String>> scannedItems = (jobData['scannedItems'] as List)
         .map((item) => Map<String, String>.from(item as Map))
         .toList();
+    List<Map<String, String>> loadedItems = (jobData['loadedItems'] as List)
+        .map((item) => Map<String, String>.from(item as Map))
+        .toList();
 
-    // Directly navigate to ScanScreen or LoadScreen based on user action
     if (isEdit || !isCompleted) {
-      // Open ScanScreen for editing or when job is not completed
       var result = await Navigator.push(
         context,
         MaterialPageRoute(
@@ -125,39 +166,35 @@ class _JobScreenState extends State<JobScreen> {
             jobNumber: jobNumber,
             isCompleted: jobData['isCompleted'],
             scannedItems: scannedItems,
-            loadedItems: List<String>.from(jobData['loadedItems']),
+            loadedItems: loadedItems,
             isLoaded: jobData['isLoaded'] ?? false,
           ),
         ),
       );
 
-      // Update job status after returning from ScanScreen
       if (result != null) {
-        bool updatedIsCompleted = result['isCompleted'] ?? jobData['isCompleted'];
-        
-        jobsCollection.doc(job.id).update({
-          'isCompleted': updatedIsCompleted,
+        _updateFirebaseJob(job.id, {
+          'isCompleted': result['isCompleted'] ?? jobData['isCompleted'],
           'scannedItems': result['scannedItems'],
           'loadedItems': result['loadedItems'],
           'isLoaded': result['isLoaded'] ?? jobData['isLoaded'],
         });
       }
     } else {
-      // If not in edit mode and job is completed, open LoadScreen directly
       var result = await Navigator.push(
         context,
         MaterialPageRoute(
           builder: (context) => LoadScreen(
             jobNumber: jobNumber,
             scannedItems: scannedItems,
-            loadedItems: List<String>.from(jobData['loadedItems']),
+            loadedItems: loadedItems,
             isLoaded: jobData['isLoaded'] ?? false,
           ),
         ),
       );
 
       if (result != null) {
-        jobsCollection.doc(job.id).update({
+        _updateFirebaseJob(job.id, {
           'loadedItems': result['loadedItems'],
           'isLoaded': result['isLoaded'] ?? jobData['isLoaded'],
         });
@@ -196,27 +233,34 @@ class _JobScreenState extends State<JobScreen> {
               ),
             ),
             const SizedBox(height: 20),
-            TextField(
-              controller: addJobController,
-              decoration: InputDecoration(
-                labelText: 'Enter Job Number to Add',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12.0),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: addJobController,
+                    decoration: InputDecoration(
+                      labelText: 'Scan or Add a Job Number',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12.0),
+                      ),
+                      filled: true,
+                      fillColor: Colors.blue[50],
+                    ),
+                  ),
                 ),
-                filled: true,
-                fillColor: Colors.blue[50],
-              ),
-            ),
-            const SizedBox(height: 8),
-            ElevatedButton(
-              onPressed: _addJob,
-              child: const Text('Add Job'),
+                const SizedBox(width: 10),
+                ElevatedButton(
+                  onPressed: _addJob,
+                  child: const Text('Add Job'),
+                ),
+              ],
             ),
             const SizedBox(height: 20),
             TextField(
               controller: searchJobController,
               decoration: InputDecoration(
                 labelText: 'Search Job Number',
+                prefixIcon: Icon(Icons.search),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12.0),
                 ),
@@ -234,7 +278,9 @@ class _JobScreenState extends State<JobScreen> {
                     return const Center(child: Text('Something went wrong'));
                   }
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
+                    return const Center(
+                      child: CircularProgressIndicator(),
+                    );
                   }
 
                   final jobs = snapshot.data!.docs;
@@ -246,34 +292,80 @@ class _JobScreenState extends State<JobScreen> {
                             final job = jobs[index];
                             final jobData = job.data() as Map<String, dynamic>;
 
+                            // Set text colors based on status
+                            Color scanningStatusColor = jobData['isCompleted'] ? Colors.green : Color.fromARGB(255, 90, 90, 90);
+                            Color loadingStatusColor = jobData['isLoaded'] ? Colors.green : Color.fromARGB(255, 90, 90, 90);
+
                             return Card(
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12.0),
+                                borderRadius: BorderRadius.circular(8.0),
                               ),
-                              margin: const EdgeInsets.symmetric(vertical: 8.0),
-                              elevation: 4.0,
-                              child: ListTile(
-                                title: Text('Job: ${jobData['jobNumber']}'),
-                                subtitle: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text('Scanning Status: ${jobData['isCompleted'] == true ? "Completed" : "Active"}'),
-                                    Text('Loading Status: ${jobData['isLoaded'] == true ? "Completed" : "Not Loaded"}'),
-                                  ],
-                                ),
-                                onTap: () => _openJobScreen(job),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      icon: const Icon(Icons.edit, color: Colors.blue),
-                                      onPressed: () => _openJobScreen(job, isEdit: true),
+                              margin: const EdgeInsets.symmetric(vertical: 4.0),
+                              elevation: 2.0,
+                              child: Padding(
+                                padding: const EdgeInsets.all(8.0),
+                                child: ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  title: Text(
+                                    'Job: ${jobData['jobNumber']}',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 16,
                                     ),
-                                    IconButton(
-                                      icon: const Icon(Icons.delete, color: Colors.red),
-                                      onPressed: () => _deleteJob(job.id),
-                                    ),
-                                  ],
+                                  ),
+                                  subtitle: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          CircleAvatar(
+                                            radius: 4,
+                                            backgroundColor: scanningStatusColor,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            'Scanning Status: ${jobData['isCompleted'] ? "Completed" : "Active"}',
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              color: scanningStatusColor,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      Row(
+                                        children: [
+                                          CircleAvatar(
+                                            radius: 4,
+                                            backgroundColor: loadingStatusColor,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            'Loading Status: ${jobData['isLoaded'] ? "Completed" : "Not Loaded"}',
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              color: loadingStatusColor,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                  onTap: () => _openJobScreen(job),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        iconSize: 20,
+                                        icon: const Icon(Icons.edit, color: Colors.black),
+                                        onPressed: () => _openJobScreen(job, isEdit: true),
+                                      ),
+                                      IconButton(
+                                        iconSize: 20,
+                                        icon: const Icon(Icons.delete, color: Colors.black),
+                                        onPressed: () => _deleteJob(job.id),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             );
