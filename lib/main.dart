@@ -39,7 +39,6 @@ class JobScreen extends StatefulWidget {
 
 class _JobScreenState extends State<JobScreen> {
   final TextEditingController addJobController = TextEditingController();
-  final TextEditingController searchJobController = TextEditingController();
   final CollectionReference jobsCollection = FirebaseFirestore.instance.collection('jobs');
 
   Stream<QuerySnapshot> _jobStream = FirebaseFirestore.instance
@@ -50,7 +49,6 @@ class _JobScreenState extends State<JobScreen> {
   @override
   void dispose() {
     addJobController.dispose();
-    searchJobController.dispose();
     super.dispose();
   }
 
@@ -71,6 +69,8 @@ class _JobScreenState extends State<JobScreen> {
           'isCompleted': false,
           'isLoaded': false,
           'isDespatched': false,
+          'isStorePickComplete': false,
+          'isYardPickComplete': false,
           'loadedItems': [],
           'scannedItems': [],
           'lastModified': FieldValue.serverTimestamp(),
@@ -108,7 +108,6 @@ class _JobScreenState extends State<JobScreen> {
         _jobStream = jobsCollection
             .where('jobNumber', isGreaterThanOrEqualTo: query)
             .where('jobNumber', isLessThan: '${query}z')
-            .orderBy('lastModified', descending: true)
             .snapshots();
       }
     });
@@ -123,11 +122,11 @@ class _JobScreenState extends State<JobScreen> {
           content: const Text('Are you sure you want to delete this job? This action cannot be undone.'),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(false), // Cancel deletion
+              onPressed: () => Navigator.of(context).pop(false),
               child: const Text('Cancel'),
             ),
             TextButton(
-              onPressed: () => Navigator.of(context).pop(true), // Confirm deletion
+              onPressed: () => Navigator.of(context).pop(true),
               child: const Text(
                 'Delete',
                 style: TextStyle(color: Colors.red),
@@ -146,16 +145,27 @@ class _JobScreenState extends State<JobScreen> {
     }
   }
 
-  void _openJobScreen(DocumentSnapshot job, {bool isEdit = false}) async {
+  Future<void> _openJobScreen(DocumentSnapshot job, {bool isEdit = false}) async {
     final jobData = job.data() as Map<String, dynamic>;
-    final jobNumber = jobData['jobNumber'];
-    bool isCompleted = jobData['isCompleted'] ?? false;
+    final jobNumber = jobData['jobNumber'] ?? '';
+    bool isCompleted = jobData['isCompleted'] == true;
+    bool isLoaded = jobData['isLoaded'] == true;
 
-    List<Map<String, String>> scannedItems = (jobData['scannedItems'] as List)
-        .map((item) => Map<String, String>.from(item as Map))
+    // Convert scannedItems to List<Map<String, dynamic>> to handle all types
+    List<Map<String, dynamic>> scannedItems = (jobData['scannedItems'] ?? [])
+        .map<Map<String, dynamic>>((item) => {
+              'barcode': (item['barcode'] ?? '').toString(),
+              'category': (item['category'] ?? '').toString(),
+            })
         .toList();
-    List<Map<String, String>> loadedItems = (jobData['loadedItems'] as List)
-        .map((item) => Map<String, String>.from(item as Map))
+
+    // Convert loadedItems to List<Map<String, dynamic>>, ensuring isSent is bool
+    List<Map<String, dynamic>> loadedItems = (jobData['loadedItems'] ?? [])
+        .map<Map<String, dynamic>>((item) => {
+              'barcode': (item['barcode'] ?? '').toString(),
+              'category': (item['category'] ?? '').toString(),
+              'isSent': item['isSent'] == true, // Ensure isSent is a bool
+            })
         .toList();
 
     if (isEdit || !isCompleted) {
@@ -164,10 +174,12 @@ class _JobScreenState extends State<JobScreen> {
         MaterialPageRoute(
           builder: (context) => ScanScreen(
             jobNumber: jobNumber,
-            isCompleted: jobData['isCompleted'],
+            isCompleted: isCompleted,
             scannedItems: scannedItems,
             loadedItems: loadedItems,
-            isLoaded: jobData['isLoaded'] ?? false,
+            isLoaded: isLoaded,
+            isStorePickComplete: jobData['isStorePickComplete'] == true,
+            isYardPickComplete: jobData['isYardPickComplete'] == true,
           ),
         ),
       );
@@ -178,6 +190,8 @@ class _JobScreenState extends State<JobScreen> {
           'scannedItems': result['scannedItems'],
           'loadedItems': result['loadedItems'],
           'isLoaded': result['isLoaded'] ?? jobData['isLoaded'],
+          'isStorePickComplete': result['isStorePickComplete'] ?? jobData['isStorePickComplete'],
+          'isYardPickComplete': result['isYardPickComplete'] ?? jobData['isYardPickComplete'],
         });
       }
     } else {
@@ -188,15 +202,19 @@ class _JobScreenState extends State<JobScreen> {
             jobNumber: jobNumber,
             scannedItems: scannedItems,
             loadedItems: loadedItems,
-            isLoaded: jobData['isLoaded'] ?? false,
+            isLoaded: isLoaded,
           ),
         ),
       );
 
       if (result != null) {
+        loadedItems = result['loadedItems'];
+        isLoaded = result['isLoaded'] ?? isLoaded;
+
+        // Update Firebase with the returned loadedItems and isLoaded status
         _updateFirebaseJob(job.id, {
-          'loadedItems': result['loadedItems'],
-          'isLoaded': result['isLoaded'] ?? jobData['isLoaded'],
+          'loadedItems': loadedItems,
+          'isLoaded': isLoaded,
         });
       }
     }
@@ -217,8 +235,8 @@ class _JobScreenState extends State<JobScreen> {
                 children: [
                   Image.asset(
                     'assets/app_icon.png',
-                    width: 100,
-                    height: 100,
+                    width: 150,
+                    height: 150,
                   ),
                   const SizedBox(height: 10),
                   const Text(
@@ -257,7 +275,7 @@ class _JobScreenState extends State<JobScreen> {
             ),
             const SizedBox(height: 20),
             TextField(
-              controller: searchJobController,
+              onChanged: _liveSearchJob,
               decoration: InputDecoration(
                 labelText: 'Search Job Number',
                 prefixIcon: Icon(Icons.search),
@@ -267,7 +285,6 @@ class _JobScreenState extends State<JobScreen> {
                 filled: true,
                 fillColor: Colors.blue[50],
               ),
-              onChanged: _liveSearchJob,
             ),
             const SizedBox(height: 20),
             Expanded(
@@ -278,9 +295,7 @@ class _JobScreenState extends State<JobScreen> {
                     return const Center(child: Text('Something went wrong'));
                   }
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(
-                      child: CircularProgressIndicator(),
-                    );
+                    return const Center(child: CircularProgressIndicator());
                   }
 
                   final jobs = snapshot.data!.docs;
@@ -292,7 +307,6 @@ class _JobScreenState extends State<JobScreen> {
                             final job = jobs[index];
                             final jobData = job.data() as Map<String, dynamic>;
 
-                            // Set text colors based on status
                             Color scanningStatusColor = jobData['isCompleted'] ? Colors.green : Color.fromARGB(255, 90, 90, 90);
                             Color loadingStatusColor = jobData['isLoaded'] ? Colors.green : Color.fromARGB(255, 90, 90, 90);
 
@@ -324,7 +338,7 @@ class _JobScreenState extends State<JobScreen> {
                                           ),
                                           const SizedBox(width: 4),
                                           Text(
-                                            'Scanning Status: ${jobData['isCompleted'] ? "Completed" : "Active"}',
+                                            'Scanning: ${jobData['isCompleted'] ? "Completed" : "Active"}',
                                             style: TextStyle(
                                               fontSize: 14,
                                               color: scanningStatusColor,
@@ -340,7 +354,7 @@ class _JobScreenState extends State<JobScreen> {
                                           ),
                                           const SizedBox(width: 4),
                                           Text(
-                                            'Loading Status: ${jobData['isLoaded'] ? "Completed" : "Not Loaded"}',
+                                            'Loading: ${jobData['isLoaded'] ? "Completed" : "Active"}',
                                             style: TextStyle(
                                               fontSize: 14,
                                               color: loadingStatusColor,

@@ -4,8 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 class LoadScreen extends StatefulWidget {
   final String jobNumber;
-  final List<Map<String, String>> scannedItems;
-  final List<Map<String, String>> loadedItems;
+  final List<Map<String, dynamic>> scannedItems;
+  final List<Map<String, dynamic>> loadedItems;
   final bool isLoaded;
 
   const LoadScreen({
@@ -22,7 +22,7 @@ class LoadScreen extends StatefulWidget {
 
 class _LoadScreenState extends State<LoadScreen> {
   final TextEditingController loadController = TextEditingController();
-  late List<Map<String, String>> loadedItems;
+  late List<Map<String, dynamic>> loadedItems;
   late Map<String, int> scannedCategoryCount;
   late Map<String, int> loadedCategoryCount;
   bool isLoaded = false;
@@ -32,16 +32,25 @@ class _LoadScreenState extends State<LoadScreen> {
   @override
   void initState() {
     super.initState();
-    loadedItems = List<Map<String, String>>.from(widget.loadedItems);
+
+    // Initialize loadedItems and ensure each item has 'isSent' as a boolean
+    loadedItems = widget.loadedItems.map((item) {
+      return {
+        'barcode': item['barcode'] ?? '',
+        'category': item['category'] ?? '',
+        'isSent': item['isSent'] == true, // Ensure isSent is a bool
+      };
+    }).toList();
+
     isLoaded = widget.isLoaded;
     _initializeCategoryCounts();
-    loadController.addListener(_onBarcodeChanged); // Set up listener for input debounce
+    loadController.addListener(_onBarcodeChanged);
   }
 
   @override
   void dispose() {
-    _debounce?.cancel(); // Cancel the debounce timer if active
-    loadController.removeListener(_onBarcodeChanged); // Remove listener to prevent memory leaks
+    _debounce?.cancel();
+    loadController.removeListener(_onBarcodeChanged);
     loadController.dispose();
     super.dispose();
   }
@@ -49,13 +58,13 @@ class _LoadScreenState extends State<LoadScreen> {
   void _initializeCategoryCounts() {
     scannedCategoryCount = {};
     for (var item in widget.scannedItems) {
-      scannedCategoryCount[item['category']!] =
-          (scannedCategoryCount[item['category']!] ?? 0) + 1;
+      scannedCategoryCount[item['category'] as String] =
+          (scannedCategoryCount[item['category'] as String] ?? 0) + 1;
     }
 
     loadedCategoryCount = {};
     for (var item in loadedItems) {
-      String category = item['category']!;
+      String category = item['category'] as String;
       loadedCategoryCount[category] = (loadedCategoryCount[category] ?? 0) + 1;
     }
   }
@@ -63,10 +72,11 @@ class _LoadScreenState extends State<LoadScreen> {
   Future<void> _updateFirebase() async {
     final jobDoc = FirebaseFirestore.instance.collection('jobs').doc(widget.jobNumber);
 
-    List<Map<String, String>> loadedItemsForFirebase = loadedItems.map((item) {
+    List<Map<String, dynamic>> loadedItemsForFirebase = loadedItems.map((item) {
       return {
-        'barcode': item['barcode'] ?? '',
-        'category': item['category'] ?? '',
+        'barcode': item['barcode'],
+        'category': item['category'],
+        'isSent': item['isSent'],
       };
     }).toList();
 
@@ -93,11 +103,10 @@ class _LoadScreenState extends State<LoadScreen> {
   }
 
   void _onBarcodeChanged() {
-    // Debounce to wait for user to finish typing
     if (_debounce?.isActive ?? false) _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 500), () {
       if (loadController.text.trim().isNotEmpty) {
-        _addLoadItem(); // Call the barcode check only after 500ms of inactivity
+        _addLoadItem();
       }
     });
   }
@@ -106,15 +115,15 @@ class _LoadScreenState extends State<LoadScreen> {
     String barcode = loadController.text.trim();
 
     if (barcode.isNotEmpty) {
-      // Find the scanned item by barcode
       var scannedItem = widget.scannedItems.firstWhere(
-          (item) => item['barcode'] == barcode, orElse: () => {});
+        (item) => item['barcode'] == barcode,
+        orElse: () => <String, dynamic>{}, // Return an empty map if not found
+      );
 
-      // Ensure the scanned item is found and not already loaded
       if (scannedItem.isNotEmpty && !loadedItems.any((item) => item['barcode'] == barcode)) {
         setState(() {
-          String category = scannedItem['category']!;
-          loadedItems.add({'barcode': barcode, 'category': category});
+          String category = scannedItem['category'] ?? 'Unknown';
+          loadedItems.add({'barcode': barcode, 'category': category, 'isSent': false});
           loadedCategoryCount[category] = (loadedCategoryCount[category] ?? 0) + 1;
           loadController.clear();
           currentCategory = category;
@@ -132,10 +141,43 @@ class _LoadScreenState extends State<LoadScreen> {
     }
   }
 
+  bool _allItemsSent() {
+    // Check if all items in loadedItems have isSent as true
+    return loadedItems.every((item) => item['isSent'] == true);
+  }
+
   void _toggleIsLoaded(bool value) {
+    // Only allow setting isLoaded to true if all items are marked as sent
+    if (value && !_allItemsSent()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('All items must be marked as sent before completing loading.')),
+      );
+      return;
+    }
+
     setState(() {
       isLoaded = value;
     });
+    _updateFirebase();
+  }
+
+  void _toggleItemSentStatus(String barcode, bool isSent) {
+    setState(() {
+      loadedItems = loadedItems.map((item) {
+        if (item['barcode'] == barcode) {
+          return {...item, 'isSent': isSent};
+        }
+        return item;
+      }).toList();
+    });
+
+    // If any item is marked as unsent, ensure that `isLoaded` is set to false
+    if (!isSent) {
+      setState(() {
+        isLoaded = false;
+      });
+    }
+
     _updateFirebase();
   }
 
@@ -203,7 +245,7 @@ class _LoadScreenState extends State<LoadScreen> {
                   ),
                 ),
                 value: isLoaded,
-                onChanged: _toggleIsLoaded,
+                onChanged: _allItemsSent() ? _toggleIsLoaded : null, // Only allow if all items are sent
                 activeColor: Colors.green,
                 inactiveThumbColor: Colors.redAccent,
                 inactiveTrackColor: Colors.red[200],
@@ -211,19 +253,23 @@ class _LoadScreenState extends State<LoadScreen> {
             ],
             const SizedBox(height: 20),
             const Text(
-              'Loading Status:',
+              'Loaded Items:',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 10),
             Expanded(
               child: ListView(
-                children: scannedCategoryCount.keys.map((category) {
-                  int loadedCount = loadedCategoryCount[category] ?? 0;
-                  int totalCount = scannedCategoryCount[category]!;
+                children: loadedItems.map((item) {
                   return ListTile(
                     title: Text(
-                      '$loadedCount/$totalCount $category Loaded',
+                      'Barcode: ${item['barcode']} (${item['category']})',
                       style: const TextStyle(fontSize: 16),
+                    ),
+                    trailing: Switch(
+                      value: item['isSent'] as bool,
+                      onChanged: (value) => _toggleItemSentStatus(item['barcode'] as String, value),
+                      activeColor: Colors.blue,
+                      inactiveThumbColor: Colors.grey,
                     ),
                   );
                 }).toList(),
