@@ -34,10 +34,10 @@ class JobScreen extends StatefulWidget {
   const JobScreen({super.key});
 
   @override
-  _JobScreenState createState() => _JobScreenState();
+  JobScreenState createState() => JobScreenState(); // Made public
 }
 
-class _JobScreenState extends State<JobScreen> {
+class JobScreenState extends State<JobScreen> { // Made public
   final TextEditingController addJobController = TextEditingController();
   final CollectionReference jobsCollection = FirebaseFirestore.instance.collection('jobs');
 
@@ -60,9 +60,11 @@ class _JobScreenState extends State<JobScreen> {
           .get();
 
       if (query.docs.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Job $jobNumber already exists.')),
-        );
+        if (mounted) { // Check if mounted
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Job $jobNumber already exists.')),
+          );
+        }
       } else {
         await jobsCollection.doc(jobNumber).set({
           'jobNumber': jobNumber,
@@ -75,15 +77,19 @@ class _JobScreenState extends State<JobScreen> {
           'scannedItems': [],
           'lastModified': FieldValue.serverTimestamp(),
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Created new Job: $jobNumber')),
-        );
+        if (mounted) { // Check if mounted
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Created new Job: $jobNumber')),
+          );
+        }
       }
       addJobController.clear();
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a job number to add.')),
-      );
+      if (mounted) { // Check if mounted
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please enter a job number to add.')),
+        );
+      }
     }
   }
 
@@ -92,9 +98,11 @@ class _JobScreenState extends State<JobScreen> {
       data['lastModified'] = FieldValue.serverTimestamp();
       await jobsCollection.doc(jobId).update(data);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to update job in Firebase: $e')),
-      );
+      if (mounted) { // Check if mounted
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update job in Firebase: $e')),
+        );
+      }
     }
   }
 
@@ -139,19 +147,21 @@ class _JobScreenState extends State<JobScreen> {
 
     if (confirm == true) {
       await jobsCollection.doc(jobId).delete();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Job deleted successfully.')),
-      );
+      if (mounted) { // Check if mounted
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Job deleted successfully.')),
+        );
+      }
     }
   }
 
   Future<void> _openJobScreen(DocumentSnapshot job, {bool isEdit = false}) async {
     final jobData = job.data() as Map<String, dynamic>;
     final jobNumber = jobData['jobNumber'] ?? '';
-    bool isCompleted = jobData['isCompleted'] == true;
+    bool isCompleted = jobData['isCompleted'] == true;  // This represents isScanningCompleted
     bool isLoaded = jobData['isLoaded'] == true;
 
-    // Convert scannedItems to List<Map<String, dynamic>> to handle all types
+    // Convert scannedItems and loadedItems
     List<Map<String, dynamic>> scannedItems = (jobData['scannedItems'] ?? [])
         .map<Map<String, dynamic>>((item) => {
               'barcode': (item['barcode'] ?? '').toString(),
@@ -159,12 +169,11 @@ class _JobScreenState extends State<JobScreen> {
             })
         .toList();
 
-    // Convert loadedItems to List<Map<String, dynamic>>, ensuring isSent is bool
     List<Map<String, dynamic>> loadedItems = (jobData['loadedItems'] ?? [])
         .map<Map<String, dynamic>>((item) => {
               'barcode': (item['barcode'] ?? '').toString(),
               'category': (item['category'] ?? '').toString(),
-              'isSent': item['isSent'] == true, // Ensure isSent is a bool
+              'isSent': item['isSent'] == true,
             })
         .toList();
 
@@ -174,7 +183,7 @@ class _JobScreenState extends State<JobScreen> {
         MaterialPageRoute(
           builder: (context) => ScanScreen(
             jobNumber: jobNumber,
-            isCompleted: isCompleted,
+            isCompleted: isCompleted,  // Pass the current isScanningCompleted state
             scannedItems: scannedItems,
             loadedItems: loadedItems,
             isLoaded: isLoaded,
@@ -203,6 +212,7 @@ class _JobScreenState extends State<JobScreen> {
             scannedItems: scannedItems,
             loadedItems: loadedItems,
             isLoaded: isLoaded,
+            isScanningCompleted: isCompleted,  // Pass the isScanningCompleted status to LoadScreen
           ),
         ),
       );
@@ -235,8 +245,8 @@ class _JobScreenState extends State<JobScreen> {
                 children: [
                   Image.asset(
                     'assets/app_icon.png',
-                    width: 150,
-                    height: 150,
+                    width: 100,
+                    height: 100,
                   ),
                   const SizedBox(height: 10),
                   const Text(

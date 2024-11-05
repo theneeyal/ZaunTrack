@@ -7,6 +7,7 @@ class LoadScreen extends StatefulWidget {
   final List<Map<String, dynamic>> scannedItems;
   final List<Map<String, dynamic>> loadedItems;
   final bool isLoaded;
+  final bool isScanningCompleted;
 
   const LoadScreen({
     super.key,
@@ -14,37 +15,35 @@ class LoadScreen extends StatefulWidget {
     required this.scannedItems,
     required this.loadedItems,
     this.isLoaded = false,
+    this.isScanningCompleted = false,
   });
 
   @override
-  _LoadScreenState createState() => _LoadScreenState();
+  LoadScreenState createState() => LoadScreenState();
 }
 
-class _LoadScreenState extends State<LoadScreen> {
+class LoadScreenState extends State<LoadScreen> {
   final TextEditingController loadController = TextEditingController();
   late List<Map<String, dynamic>> loadedItems;
-  late Map<String, int> scannedCategoryCount;
-  late Map<String, int> loadedCategoryCount;
   bool isLoaded = false;
+  bool isScanningCompleted = false;
   String? currentCategory;
   Timer? _debounce;
 
   @override
   void initState() {
     super.initState();
-
-    // Initialize loadedItems and ensure each item has 'isSent' as a boolean
-    loadedItems = widget.loadedItems.map((item) {
-      return {
-        'barcode': item['barcode'] ?? '',
-        'category': item['category'] ?? '',
-        'isSent': item['isSent'] == true, // Ensure isSent is a bool
-      };
-    }).toList();
+    loadedItems = List.from(widget.loadedItems.map((item) => {
+      'barcode': item['barcode'] ?? '',
+      'category': item['category'] ?? '',
+      'isSent': item['isSent'] == true,
+    }));
 
     isLoaded = widget.isLoaded;
-    _initializeCategoryCounts();
+    isScanningCompleted = widget.isScanningCompleted;
     loadController.addListener(_onBarcodeChanged);
+
+    _checkIsLoadedCondition();
   }
 
   @override
@@ -55,18 +54,26 @@ class _LoadScreenState extends State<LoadScreen> {
     super.dispose();
   }
 
-  void _initializeCategoryCounts() {
-    scannedCategoryCount = {};
+  // Method to get category-wise count of loaded and scanned items
+  Map<String, String> _getCategoryCounts() {
+    Map<String, int> scannedCounts = {};
+    Map<String, int> loadedCounts = {};
+
     for (var item in widget.scannedItems) {
-      scannedCategoryCount[item['category'] as String] =
-          (scannedCategoryCount[item['category'] as String] ?? 0) + 1;
+      String category = item['category'] ?? 'Unknown';
+      scannedCounts[category] = (scannedCounts[category] ?? 0) + 1;
     }
 
-    loadedCategoryCount = {};
     for (var item in loadedItems) {
-      String category = item['category'] as String;
-      loadedCategoryCount[category] = (loadedCategoryCount[category] ?? 0) + 1;
+      String category = item['category'] ?? 'Unknown';
+      loadedCounts[category] = (loadedCounts[category] ?? 0) + 1;
     }
+
+    // Combine counts into a displayable format
+    return scannedCounts.map((category, totalCount) {
+      int loadedCount = loadedCounts[category] ?? 0;
+      return MapEntry(category, '$loadedCount/$totalCount');
+    });
   }
 
   Future<void> _updateFirebase() async {
@@ -81,24 +88,16 @@ class _LoadScreenState extends State<LoadScreen> {
     }).toList();
 
     try {
-      var docSnapshot = await jobDoc.get();
-      if (docSnapshot.exists) {
-        await jobDoc.update({
-          'loadedItems': loadedItemsForFirebase,
-          'isLoaded': isLoaded,
-        });
-        print("Firebase update successful.");
-      } else {
-        print("Document with jobNumber ${widget.jobNumber} does not exist.");
+      await jobDoc.update({
+        'loadedItems': loadedItemsForFirebase,
+        'isLoaded': isLoaded,
+      });
+    } catch (e) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Job with number ${widget.jobNumber} not found in Firebase.')),
+          SnackBar(content: Text('Failed to update job in Firebase: $e')),
         );
       }
-    } catch (e) {
-      print("Error updating Firebase: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to update job in Firebase: $e')),
-      );
     }
   }
 
@@ -117,44 +116,59 @@ class _LoadScreenState extends State<LoadScreen> {
     if (barcode.isNotEmpty) {
       var scannedItem = widget.scannedItems.firstWhere(
         (item) => item['barcode'] == barcode,
-        orElse: () => <String, dynamic>{}, // Return an empty map if not found
+        orElse: () => <String, dynamic>{},
       );
 
       if (scannedItem.isNotEmpty && !loadedItems.any((item) => item['barcode'] == barcode)) {
         setState(() {
           String category = scannedItem['category'] ?? 'Unknown';
           loadedItems.add({'barcode': barcode, 'category': category, 'isSent': false});
-          loadedCategoryCount[category] = (loadedCategoryCount[category] ?? 0) + 1;
           loadController.clear();
           currentCategory = category;
         });
-        _updateFirebase(); // Update Firebase after adding item
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Item $barcode added to loaded items')),
-        );
+        _updateFirebase();
       } else if (scannedItem.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Barcode $barcode not found in scanned items')),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Barcode $barcode not found in scanned items')),
+          );
+        }
         currentCategory = null;
       }
     }
+    _checkIsLoadedCondition();
   }
 
   bool _allItemsSent() {
-    // Check if all items in loadedItems have isSent as true
     return loadedItems.every((item) => item['isSent'] == true);
   }
 
+  bool _allScannedItemsLoaded() {
+    return widget.scannedItems.every((scannedItem) =>
+        loadedItems.any((loadedItem) => loadedItem['barcode'] == scannedItem['barcode']));
+  }
+
+  bool _canToggleIsLoaded() {
+    return _allItemsSent() && _allScannedItemsLoaded() && isScanningCompleted;
+  }
+
+  void _checkIsLoadedCondition() {
+    if (!isLoaded || !_canToggleIsLoaded()) {
+      setState(() {
+        isLoaded = false;
+      });
+    }
+  }
+
   void _toggleIsLoaded(bool value) {
-    // Only allow setting isLoaded to true if all items are marked as sent
-    if (value && !_allItemsSent()) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('All items must be marked as sent before completing loading.')),
-      );
+    if (value && !_canToggleIsLoaded()) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('All conditions must be met to mark loading as completed.')),
+        );
+      }
       return;
     }
-
     setState(() {
       isLoaded = value;
     });
@@ -171,18 +185,14 @@ class _LoadScreenState extends State<LoadScreen> {
       }).toList();
     });
 
-    // If any item is marked as unsent, ensure that `isLoaded` is set to false
-    if (!isSent) {
-      setState(() {
-        isLoaded = false;
-      });
-    }
-
     _updateFirebase();
+    _checkIsLoadedCondition();
   }
 
   @override
   Widget build(BuildContext context) {
+    Map<String, String> categoryCounts = _getCategoryCounts();
+
     return Scaffold(
       appBar: AppBar(
         title: Text('Load Items for Job ${widget.jobNumber}'),
@@ -219,38 +229,13 @@ class _LoadScreenState extends State<LoadScreen> {
                 style: const TextStyle(fontSize: 16, color: Colors.blueGrey),
               ),
             const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () {
-                if (loadController.text.trim().isNotEmpty) {
-                  _addLoadItem();
-                }
-              },
-              child: const Text('Add Load Item'),
+            // Display category counts
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: categoryCounts.entries.map((entry) {
+                return Text('${entry.key}: ${entry.value}', style: const TextStyle(fontSize: 16));
+              }).toList(),
             ),
-            const SizedBox(height: 20),
-            if (loadedItems.length == widget.scannedItems.length) ...[
-              const Text(
-                'All items are loaded!',
-                style: TextStyle(fontSize: 16, color: Colors.green, fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 10),
-              SwitchListTile(
-                title: Text(
-                  isLoaded ? 'Loading Completed' : 'Mark Loading as Completed',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: isLoaded ? Colors.green : Colors.red,
-                  ),
-                ),
-                value: isLoaded,
-                onChanged: _allItemsSent() ? _toggleIsLoaded : null, // Only allow if all items are sent
-                activeColor: Colors.green,
-                inactiveThumbColor: Colors.redAccent,
-                inactiveTrackColor: Colors.red[200],
-              ),
-            ],
             const SizedBox(height: 20),
             const Text(
               'Loaded Items:',
@@ -274,6 +259,22 @@ class _LoadScreenState extends State<LoadScreen> {
                   );
                 }).toList(),
               ),
+            ),
+            const SizedBox(height: 20),
+            SwitchListTile(
+              title: Text(
+                isLoaded ? 'Loading Completed' : 'Mark Loading as Completed',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: isLoaded ? Colors.green : Colors.red,
+                ),
+              ),
+              value: isLoaded,
+              onChanged: _canToggleIsLoaded() ? _toggleIsLoaded : null,
+              activeColor: Colors.green,
+              inactiveThumbColor: Colors.redAccent,
+              inactiveTrackColor: Colors.red[200],
             ),
           ],
         ),

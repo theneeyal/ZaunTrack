@@ -1,6 +1,6 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'load_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ScanScreen extends StatefulWidget {
   final String jobNumber;
@@ -23,10 +23,10 @@ class ScanScreen extends StatefulWidget {
   });
 
   @override
-  _ScanScreenState createState() => _ScanScreenState();
+  ScanScreenState createState() => ScanScreenState();
 }
 
-class _ScanScreenState extends State<ScanScreen> {
+class ScanScreenState extends State<ScanScreen> {
   final TextEditingController barcodeController = TextEditingController();
   String? selectedCategory;
   late List<Map<String, dynamic>> scannedItems;
@@ -42,16 +42,77 @@ class _ScanScreenState extends State<ScanScreen> {
     isStorePickComplete = widget.isStorePickComplete;
     isYardPickComplete = widget.isYardPickComplete;
     isLoaded = widget.isLoaded;
+    isScanningCompleted = widget.isCompleted;
     scannedItems = List.from(widget.scannedItems);
     loadedItems = List.from(widget.loadedItems);
-    _updateIsLoadedStatus();
+    _checkLoadingConditions();
+  }
+
+  @override
+  void dispose() {
+    barcodeController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _updateFirebase() async {
+    final jobDoc = FirebaseFirestore.instance.collection('jobs').doc(widget.jobNumber);
+
+    List<Map<String, dynamic>> loadedItemsForFirebase = loadedItems.map((item) {
+      return {
+        'barcode': item['barcode'],
+        'category': item['category'],
+        'isSent': item['isSent'],
+      };
+    }).toList();
+
+    try {
+      await jobDoc.update({
+        'loadedItems': loadedItemsForFirebase,
+        'isLoaded': isLoaded,
+        'isStorePickComplete': isStorePickComplete,
+        'isYardPickComplete': isYardPickComplete,
+        'isCompleted': isScanningCompleted,
+        'scannedItems': scannedItems,
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update job in Firebase: $e')),
+        );
+      }
+    }
+  }
+
+  void _openLoadScreen() async {
+    var result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => LoadScreen(
+          jobNumber: widget.jobNumber,
+          scannedItems: scannedItems,
+          loadedItems: loadedItems,
+          isLoaded: isLoaded,
+          isScanningCompleted: isScanningCompleted,
+        ),
+      ),
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        loadedItems = List<Map<String, dynamic>>.from(result['loadedItems']);
+        isLoaded = result['isLoaded'] ?? isLoaded;
+      });
+      _updateFirebase();
+    }
   }
 
   void _selectCategory(String category) {
     if (isStorePickComplete && isYardPickComplete) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cannot add items when both toggles are complete.')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cannot add items when both toggles are complete.')),
+        );
+      }
       return;
     }
 
@@ -67,9 +128,10 @@ class _ScanScreenState extends State<ScanScreen> {
         });
         barcodeController.clear();
         selectedCategory = null;
-        _updateIsLoadedStatus();
+        _checkLoadingConditions();
+        _updateFirebase();
       });
-    } else if (alreadyScanned) {
+    } else if (alreadyScanned && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Item with barcode $barcode has already been scanned.')),
       );
@@ -80,6 +142,7 @@ class _ScanScreenState extends State<ScanScreen> {
     setState(() {
       isStorePickComplete = value;
       _updateScanningCompletedStatus();
+      _updateFirebase();
     });
   }
 
@@ -87,13 +150,14 @@ class _ScanScreenState extends State<ScanScreen> {
     setState(() {
       isYardPickComplete = value;
       _updateScanningCompletedStatus();
+      _updateFirebase();
     });
   }
 
   void _updateScanningCompletedStatus() {
     setState(() {
       isScanningCompleted = isStorePickComplete && isYardPickComplete;
-      _updateIsLoadedStatus();
+      _checkLoadingConditions();
     });
   }
 
@@ -101,33 +165,17 @@ class _ScanScreenState extends State<ScanScreen> {
     return loadedItems.every((item) => item['isSent'] == true);
   }
 
-  void _updateIsLoadedStatus() {
-    // Only set `isLoaded` to true if scanning is complete AND all items are marked as sent
+  void _checkLoadingConditions() {
     setState(() {
-      isLoaded = isScanningCompleted && _allItemsSent();
+      if (!isScanningCompleted || !_allItemsSent()) {
+        isLoaded = false;
+      }
     });
   }
 
-  void _openLoadScreen() async {
-    var result = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => LoadScreen(
-          jobNumber: widget.jobNumber,
-          scannedItems: scannedItems,
-          loadedItems: loadedItems,
-          isLoaded: isLoaded,
-        ),
-      ),
-    );
-
-    if (result != null) {
-      setState(() {
-        loadedItems = List<Map<String, dynamic>>.from(result['loadedItems']);
-        isLoaded = result['isLoaded'] ?? isLoaded;
-        _updateIsLoadedStatus();
-      });
-    }
+  String _formatBarcode(String barcode) {
+    if (barcode.length <= 3) return barcode;
+    return barcode.substring(0, 4) + '*' * (barcode.length - 4);
   }
 
   @override
@@ -148,82 +196,87 @@ class _ScanScreenState extends State<ScanScreen> {
               'isStorePickComplete': isStorePickComplete,
               'isYardPickComplete': isYardPickComplete,
             });
+            _updateFirebase();
           },
         ),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              controller: barcodeController,
-              decoration: InputDecoration(
-                labelText: 'Enter or Scan Barcode',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: barcodeController,
+                decoration: InputDecoration(
+                  labelText: 'Enter or Scan Barcode',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  filled: true,
+                  fillColor: Colors.grey[200],
                 ),
-                filled: true,
-                fillColor: Colors.grey[200],
+                enabled: !isInputDisabled,
               ),
-              enabled: !isInputDisabled,
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              "Please choose the type of item to be scanned:",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8.0,
-              runSpacing: 8.0,
-              alignment: WrapAlignment.center,
-              children: [
-                _buildCategoryButton('Mesh'),
-                _buildCategoryButton('Posts'),
-                _buildCategoryButton('Gates'),
-                _buildCategoryButton('Clamp-bars'),
-                _buildCategoryButton('Railings'),
-                _buildCategoryButton('Fixings'),
-                _buildCategoryButton('Other'),
-              ],
-            ),
-            const SizedBox(height: 16),
-            SwitchListTile(
-              title: const Text(
-                'Store Pick Complete',
+              const SizedBox(height: 16),
+              const Text(
+                "Please choose the type of item to be scanned:",
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
-              value: isStorePickComplete,
-              onChanged: (value) {
-                _toggleStorePickStatus(value);
-              },
-              activeColor: Colors.green,
-              inactiveThumbColor: Colors.redAccent,
-              inactiveTrackColor: Colors.red[200],
-            ),
-            SwitchListTile(
-              title: const Text(
-                'Yard Pick Complete',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8.0,
+                runSpacing: 8.0,
+                alignment: WrapAlignment.center,
+                children: [
+                  _buildCategoryButton('Mesh'),
+                  _buildCategoryButton('Posts'),
+                  _buildCategoryButton('Gates'),
+                  _buildCategoryButton('Clamp-bars'),
+                  _buildCategoryButton('Railings'),
+                  _buildCategoryButton('Fixings'),
+                  _buildCategoryButton('Other'),
+                ],
               ),
-              value: isYardPickComplete,
-              onChanged: (value) {
-                _toggleYardPickStatus(value);
-              },
-              activeColor: Colors.green,
-              inactiveThumbColor: Colors.redAccent,
-              inactiveTrackColor: Colors.red[200],
-            ),
-            const SizedBox(height: 24),
-            Text(
-              '${scannedItems.length} Items Scanned:',
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 10),
-            Expanded(
-              child: ListView(
-                children: scannedItems.map((item) {
+              const SizedBox(height: 16),
+              SwitchListTile(
+                title: const Text(
+                  'Store Pick Complete',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                value: isStorePickComplete,
+                onChanged: (value) {
+                  _toggleStorePickStatus(value);
+                },
+                activeColor: Colors.green,
+                inactiveThumbColor: Colors.redAccent,
+                inactiveTrackColor: Colors.red[200],
+              ),
+              SwitchListTile(
+                title: const Text(
+                  'Yard Pick Complete',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                value: isYardPickComplete,
+                onChanged: (value) {
+                  _toggleYardPickStatus(value);
+                },
+                activeColor: Colors.green,
+                inactiveThumbColor: Colors.redAccent,
+                inactiveTrackColor: Colors.red[200],
+              ),
+              const SizedBox(height: 24),
+              Text(
+                '${scannedItems.length} Items Scanned:',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 10),
+              ListView.builder(
+                shrinkWrap: true,
+                physics: NeverScrollableScrollPhysics(),
+                itemCount: scannedItems.length,
+                itemBuilder: (context, index) {
+                  final item = scannedItems[index];
                   final barcode = item['barcode']!;
                   final maskedBarcode = _formatBarcode(barcode);
                   final category = item['category'];
@@ -233,25 +286,25 @@ class _ScanScreenState extends State<ScanScreen> {
                       style: const TextStyle(fontSize: 16),
                     ),
                   );
-                }).toList(),
+                },
               ),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _openLoadScreen,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _openLoadScreen,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text(
+                  'Start Loading',
+                  style: TextStyle(fontSize: 16, color: Colors.white),
                 ),
               ),
-              child: const Text(
-                'Start Loading',
-                style: TextStyle(fontSize: 16, color: Colors.white),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -277,10 +330,5 @@ class _ScanScreenState extends State<ScanScreen> {
         ),
       ),
     );
-  }
-
-  String _formatBarcode(String barcode) {
-    if (barcode.length <= 3) return barcode;
-    return barcode.substring(0, 4) + '*' * (barcode.length - 4);
   }
 }
