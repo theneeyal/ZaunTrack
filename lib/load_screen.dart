@@ -24,6 +24,7 @@ class LoadScreen extends StatefulWidget {
 
 class LoadScreenState extends State<LoadScreen> {
   final TextEditingController loadController = TextEditingController();
+  final FocusNode loadFocusNode = FocusNode();
   late List<Map<String, dynamic>> loadedItems;
   bool isLoaded = false;
   bool isScanningCompleted = false;
@@ -44,6 +45,11 @@ class LoadScreenState extends State<LoadScreen> {
     loadController.addListener(_onBarcodeChanged);
 
     _checkIsLoadedCondition();
+
+    // Request focus on the load text field initially
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      loadFocusNode.requestFocus();
+    });
   }
 
   @override
@@ -51,6 +57,7 @@ class LoadScreenState extends State<LoadScreen> {
     _debounce?.cancel();
     loadController.removeListener(_onBarcodeChanged);
     loadController.dispose();
+    loadFocusNode.dispose();
     super.dispose();
   }
 
@@ -69,7 +76,6 @@ class LoadScreenState extends State<LoadScreen> {
       loadedCounts[category] = (loadedCounts[category] ?? 0) + 1;
     }
 
-    // Combine counts into a displayable format
     return scannedCounts.map((category, totalCount) {
       int loadedCount = loadedCounts[category] ?? 0;
       return MapEntry(category, '$loadedCount/$totalCount');
@@ -127,6 +133,7 @@ class LoadScreenState extends State<LoadScreen> {
           currentCategory = category;
         });
         _updateFirebase();
+        loadFocusNode.requestFocus(); // Re-request focus after adding an item
       } else if (scannedItem.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -134,9 +141,19 @@ class LoadScreenState extends State<LoadScreen> {
           );
         }
         currentCategory = null;
+        loadFocusNode.requestFocus(); // Re-request focus if item not found
       }
     }
     _checkIsLoadedCondition();
+  }
+
+  void _deleteLoadedItem(String barcode) {
+    setState(() {
+      loadedItems.removeWhere((item) => item['barcode'] == barcode);
+    });
+    _updateFirebase();
+    _checkIsLoadedCondition();
+    loadFocusNode.requestFocus(); // Re-request focus after deleting an item
   }
 
   bool _allItemsSent() {
@@ -213,6 +230,7 @@ class LoadScreenState extends State<LoadScreen> {
           children: [
             TextField(
               controller: loadController,
+              focusNode: loadFocusNode,
               decoration: InputDecoration(
                 labelText: 'Enter or Scan Load Item Barcode',
                 border: OutlineInputBorder(
@@ -229,7 +247,6 @@ class LoadScreenState extends State<LoadScreen> {
                 style: const TextStyle(fontSize: 16, color: Colors.blueGrey),
               ),
             const SizedBox(height: 16),
-            // Display category counts
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: categoryCounts.entries.map((entry) {
@@ -250,11 +267,20 @@ class LoadScreenState extends State<LoadScreen> {
                       'Barcode: ${item['barcode']} (${item['category']})',
                       style: const TextStyle(fontSize: 16),
                     ),
-                    trailing: Switch(
-                      value: item['isSent'] as bool,
-                      onChanged: (value) => _toggleItemSentStatus(item['barcode'] as String, value),
-                      activeColor: Colors.blue,
-                      inactiveThumbColor: Colors.grey,
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Switch(
+                          value: item['isSent'] as bool,
+                          onChanged: (value) => _toggleItemSentStatus(item['barcode'] as String, value),
+                          activeColor: Colors.blue,
+                          inactiveThumbColor: Colors.grey,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete, color: Colors.black),
+                          onPressed: () => _deleteLoadedItem(item['barcode'] as String),
+                        ),
+                      ],
                     ),
                   );
                 }).toList(),

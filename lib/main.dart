@@ -52,46 +52,83 @@ class JobScreenState extends State<JobScreen> { // Made public
     super.dispose();
   }
 
-  Future<void> _addJob() async {
-    String jobNumber = addJobController.text.trim();
-    if (jobNumber.isNotEmpty) {
-      final query = await jobsCollection
-          .where('jobNumber', isEqualTo: jobNumber)
-          .get();
+Future<void> _addJob() async {
+  // Convert jobNumber to uppercase to ensure consistency
+  String jobNumber = addJobController.text.trim().toUpperCase();
+  
+  if (jobNumber.isNotEmpty) {
+    final query = await jobsCollection
+        .where('jobNumber', isEqualTo: jobNumber)
+        .get();
 
-      if (query.docs.isNotEmpty) {
-        if (mounted) { // Check if mounted
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Job $jobNumber already exists.')),
-          );
-        }
-      } else {
-        await jobsCollection.doc(jobNumber).set({
-          'jobNumber': jobNumber,
-          'isCompleted': false,
-          'isLoaded': false,
-          'isDespatched': false,
-          'isStorePickComplete': false,
-          'isYardPickComplete': false,
-          'loadedItems': [],
-          'scannedItems': [],
-          'lastModified': FieldValue.serverTimestamp(),
-        });
-        if (mounted) { // Check if mounted
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Created new Job: $jobNumber')),
-          );
-        }
+    if (query.docs.isNotEmpty) {
+      if (mounted) { // Check if mounted
+        // Show dialog if the job already exists
+        showDialog(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: Text('Job Already Exists'),
+              content: Text('Job $jobNumber already exists. Do you want to go to the scan screen?'),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(), // Close the dialog
+                  child: Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop(); // Close the dialog
+                    // Navigate to the ScanScreen
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ScanScreen(
+                          jobNumber: jobNumber,
+                          isCompleted: query.docs.first['isCompleted'] ?? false,
+                          scannedItems: List<Map<String, dynamic>>.from(query.docs.first['scannedItems'] ?? []),
+                          loadedItems: List<Map<String, dynamic>>.from(query.docs.first['loadedItems'] ?? []),
+                          isLoaded: query.docs.first['isLoaded'] ?? false,
+                          isStorePickComplete: query.docs.first['isStorePickComplete'] ?? false,
+                          isYardPickComplete: query.docs.first['isYardPickComplete'] ?? false,
+                        ),
+                      ),
+                    );
+                  },
+                  child: Text('Go to Scan Screen'),
+                ),
+              ],
+            );
+          },
+        );
       }
-      addJobController.clear();
     } else {
+      // Proceed with adding a new job if no duplicate found
+      await jobsCollection.doc(jobNumber).set({
+        'jobNumber': jobNumber,
+        'isCompleted': false,
+        'isLoaded': false,
+        'isDespatched': false,
+        'isStorePickComplete': false,
+        'isYardPickComplete': false,
+        'loadedItems': [],
+        'scannedItems': [],
+        'lastModified': FieldValue.serverTimestamp(),
+      });
       if (mounted) { // Check if mounted
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please enter a job number to add.')),
+          SnackBar(content: Text('Created new Job: $jobNumber')),
         );
       }
     }
+    addJobController.clear();
+  } else {
+    if (mounted) { // Check if mounted
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a job number to add.')),
+      );
+    }
   }
+}
 
   Future<void> _updateFirebaseJob(String jobId, Map<String, dynamic> data) async {
     try {
@@ -106,20 +143,23 @@ class JobScreenState extends State<JobScreen> { // Made public
     }
   }
 
-  void _liveSearchJob(String query) {
-    setState(() {
-      if (query.isEmpty) {
-        _jobStream = jobsCollection
-            .orderBy('lastModified', descending: true)
-            .snapshots();
-      } else {
-        _jobStream = jobsCollection
-            .where('jobNumber', isGreaterThanOrEqualTo: query)
-            .where('jobNumber', isLessThan: '${query}z')
-            .snapshots();
-      }
-    });
-  }
+void _liveSearchJob(String query) {
+  setState(() {
+    // Convert the search query to uppercase to ensure consistency
+    query = query.toUpperCase();
+    
+    if (query.isEmpty) {
+      _jobStream = jobsCollection
+          .orderBy('lastModified', descending: true)
+          .snapshots();
+    } else {
+      _jobStream = jobsCollection
+          .where('jobNumber', isGreaterThanOrEqualTo: query)
+          .where('jobNumber', isLessThan: '${query}Z') // Ensure uppercase search range
+          .snapshots();
+    }
+  });
+}
 
   Future<void> _deleteJob(String jobId) async {
     final confirm = await showDialog<bool>(

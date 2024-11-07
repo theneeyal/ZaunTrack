@@ -28,6 +28,7 @@ class ScanScreen extends StatefulWidget {
 
 class ScanScreenState extends State<ScanScreen> {
   final TextEditingController barcodeController = TextEditingController();
+  final FocusNode barcodeFocusNode = FocusNode(); // To keep the text field focused
   String? selectedCategory;
   late List<Map<String, dynamic>> scannedItems;
   late List<Map<String, dynamic>> loadedItems;
@@ -46,11 +47,17 @@ class ScanScreenState extends State<ScanScreen> {
     scannedItems = List.from(widget.scannedItems);
     loadedItems = List.from(widget.loadedItems);
     _checkLoadingConditions();
+
+    // Request focus on the barcode text field initially
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      barcodeFocusNode.requestFocus();
+    });
   }
 
   @override
   void dispose() {
     barcodeController.dispose();
+    barcodeFocusNode.dispose(); // Dispose the FocusNode
     super.dispose();
   }
 
@@ -84,6 +91,7 @@ class ScanScreenState extends State<ScanScreen> {
   }
 
   void _openLoadScreen() async {
+    // Await the result from LoadScreen to get updated loadedItems and isLoaded
     var result = await Navigator.push(
       context,
       MaterialPageRoute(
@@ -97,12 +105,13 @@ class ScanScreenState extends State<ScanScreen> {
       ),
     );
 
+    // Check for results and update state if data was passed back
     if (result != null && mounted) {
       setState(() {
         loadedItems = List<Map<String, dynamic>>.from(result['loadedItems']);
         isLoaded = result['isLoaded'] ?? isLoaded;
       });
-      _updateFirebase();
+      _updateFirebase(); // Save updates to Firebase
     }
   }
 
@@ -131,11 +140,26 @@ class ScanScreenState extends State<ScanScreen> {
         _checkLoadingConditions();
         _updateFirebase();
       });
+      // Re-request focus after adding an item
+      barcodeFocusNode.requestFocus();
     } else if (alreadyScanned && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Item with barcode $barcode has already been scanned.')),
       );
+      // Re-request focus if the item was already scanned
+      barcodeFocusNode.requestFocus();
     }
+  }
+
+  void _deleteScannedItem(String barcode) {
+    setState(() {
+      scannedItems.removeWhere((item) => item['barcode'] == barcode);
+      loadedItems.removeWhere((item) => item['barcode'] == barcode);
+    });
+    _updateFirebase();
+    _checkLoadingConditions();
+    // Re-request focus after deleting an item
+    barcodeFocusNode.requestFocus();
   }
 
   void _toggleStorePickStatus(bool value) {
@@ -208,6 +232,7 @@ class ScanScreenState extends State<ScanScreen> {
             children: [
               TextField(
                 controller: barcodeController,
+                focusNode: barcodeFocusNode,
                 decoration: InputDecoration(
                   labelText: 'Enter or Scan Barcode',
                   border: OutlineInputBorder(
@@ -273,7 +298,7 @@ class ScanScreenState extends State<ScanScreen> {
               const SizedBox(height: 10),
               ListView.builder(
                 shrinkWrap: true,
-                physics: NeverScrollableScrollPhysics(),
+                physics: const NeverScrollableScrollPhysics(),
                 itemCount: scannedItems.length,
                 itemBuilder: (context, index) {
                   final item = scannedItems[index];
@@ -284,6 +309,10 @@ class ScanScreenState extends State<ScanScreen> {
                     title: Text(
                       '$maskedBarcode                 Category: $category',
                       style: const TextStyle(fontSize: 16),
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.red),
+                      onPressed: () => _deleteScannedItem(barcode),
                     ),
                   );
                 },
