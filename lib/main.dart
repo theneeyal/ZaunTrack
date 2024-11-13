@@ -4,6 +4,7 @@ import 'scan_screen.dart';
 import 'load_screen.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
+import 'package:intl/intl.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -34,16 +35,16 @@ class JobScreen extends StatefulWidget {
   const JobScreen({super.key});
 
   @override
-  JobScreenState createState() => JobScreenState(); // Made public
+  JobScreenState createState() => JobScreenState();
 }
 
-class JobScreenState extends State<JobScreen> { // Made public
+class JobScreenState extends State<JobScreen> {
   final TextEditingController addJobController = TextEditingController();
   final CollectionReference jobsCollection = FirebaseFirestore.instance.collection('jobs');
 
   Stream<QuerySnapshot> _jobStream = FirebaseFirestore.instance
       .collection('jobs')
-      .orderBy('lastModified', descending: true)
+      .orderBy('createdAt', descending: true)
       .snapshots();
 
   @override
@@ -52,90 +53,95 @@ class JobScreenState extends State<JobScreen> { // Made public
     super.dispose();
   }
 
-Future<void> _addJob() async {
-  // Convert jobNumber to uppercase to ensure consistency
-  String jobNumber = addJobController.text.trim().toUpperCase();
-  
-  if (jobNumber.isNotEmpty) {
-    final query = await jobsCollection
-        .where('jobNumber', isEqualTo: jobNumber)
-        .get();
+  Future<void> _addJob() async {
+    String jobNumber = addJobController.text.trim().toUpperCase();
 
-    if (query.docs.isNotEmpty) {
-      if (mounted) { // Check if mounted
-        // Show dialog if the job already exists
-        showDialog(
-          context: context,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: Text('Job Already Exists'),
-              content: Text('Job $jobNumber already exists. Do you want to go to the scan screen?'),
-              actions: <Widget>[
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(), // Close the dialog
-                  child: Text('Cancel'),
-                ),
-                TextButton(
-                  onPressed: () {
-                    Navigator.of(context).pop(); // Close the dialog
-                    // Navigate to the ScanScreen
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => ScanScreen(
-                          jobNumber: jobNumber,
-                          isCompleted: query.docs.first['isCompleted'] ?? false,
-                          scannedItems: List<Map<String, dynamic>>.from(query.docs.first['scannedItems'] ?? []),
-                          loadedItems: List<Map<String, dynamic>>.from(query.docs.first['loadedItems'] ?? []),
-                          isLoaded: query.docs.first['isLoaded'] ?? false,
-                          isStorePickComplete: query.docs.first['isStorePickComplete'] ?? false,
-                          isYardPickComplete: query.docs.first['isYardPickComplete'] ?? false,
+    if (jobNumber.isNotEmpty) {
+      final query = await jobsCollection.where('jobNumber', isEqualTo: jobNumber).get();
+
+      if (query.docs.isNotEmpty) {
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (BuildContext context) {
+              return AlertDialog(
+                title: Text('Job Already Exists'),
+                content: Text('Job $jobNumber already exists. Do you want to go to the scan screen?'),
+                actions: <Widget>[
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: Text('Cancel'),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => ScanScreen(
+                            jobNumber: jobNumber,
+                            isCompleted: query.docs.first['isCompleted'] ?? false,
+                            scannedItems: List<Map<String, dynamic>>.from(query.docs.first['scannedItems'] ?? []),
+                            loadedItems: List<Map<String, dynamic>>.from(query.docs.first['loadedItems'] ?? []),
+                            isLoaded: query.docs.first['isLoaded'] ?? false,
+                            isStorePickComplete: query.docs.first['isStorePickComplete'] ?? false,
+                            isYardPickComplete: query.docs.first['isYardPickComplete'] ?? false,
+                            hasStockItems: query.docs.first['hasStockItems'] ?? false,
+                            isStockPickComplete: query.docs.first['isStockPickComplete'] ?? false,
+                          ),
                         ),
-                      ),
-                    );
-                  },
-                  child: Text('Go to Scan Screen'),
-                ),
-              ],
+                      );
+                    },
+                    child: Text('Go to Scan Screen'),
+                  ),
+                ],
+              );
+            },
+          );
+        }
+      } else {
+        DateTime createdAt = DateTime.now();
+        try {
+          await jobsCollection.doc(jobNumber).set({
+            'jobNumber': jobNumber,
+            'isCompleted': false,
+            'isLoaded': false,
+            'isDespatched': false,
+            'isStorePickComplete': false,
+            'isYardPickComplete': false,
+            'hasStockItems': false,
+            'isStockPickComplete': false,
+            'loadedItems': [],
+            'scannedItems': [],
+            'createdAt': Timestamp.fromDate(createdAt),
+            'lastModified': FieldValue.serverTimestamp(),
+          });
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Created new Job: $jobNumber')),
             );
-          },
-        );
+          }
+        } catch (e) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error adding job: $e')),
+          );
+        }
       }
+      addJobController.clear();
     } else {
-      // Proceed with adding a new job if no duplicate found
-      await jobsCollection.doc(jobNumber).set({
-        'jobNumber': jobNumber,
-        'isCompleted': false,
-        'isLoaded': false,
-        'isDespatched': false,
-        'isStorePickComplete': false,
-        'isYardPickComplete': false,
-        'loadedItems': [],
-        'scannedItems': [],
-        'lastModified': FieldValue.serverTimestamp(),
-      });
-      if (mounted) { // Check if mounted
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Created new Job: $jobNumber')),
-        );
-      }
-    }
-    addJobController.clear();
-  } else {
-    if (mounted) { // Check if mounted
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please enter a job number to add.')),
       );
     }
   }
-}
 
   Future<void> _updateFirebaseJob(String jobId, Map<String, dynamic> data) async {
     try {
       data['lastModified'] = FieldValue.serverTimestamp();
       await jobsCollection.doc(jobId).update(data);
     } catch (e) {
-      if (mounted) { // Check if mounted
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to update job in Firebase: $e')),
         );
@@ -143,23 +149,98 @@ Future<void> _addJob() async {
     }
   }
 
-void _liveSearchJob(String query) {
-  setState(() {
-    // Convert the search query to uppercase to ensure consistency
-    query = query.toUpperCase();
-    
-    if (query.isEmpty) {
-      _jobStream = jobsCollection
-          .orderBy('lastModified', descending: true)
-          .snapshots();
+  Future<void> _openJobScreen(DocumentSnapshot job, {bool isEdit = false}) async {
+    final jobData = job.data() as Map<String, dynamic>;
+    final jobNumber = jobData['jobNumber'] ?? '';
+    bool isCompleted = jobData['isCompleted'] == true;
+    bool isLoaded = jobData['isLoaded'] == true;
+
+    List<Map<String, dynamic>> scannedItems = (jobData['scannedItems'] ?? [])
+        .map<Map<String, dynamic>>((item) => {
+              'barcode': (item['barcode'] ?? '').toString(),
+              'category': (item['category'] ?? '').toString(),
+            })
+        .toList();
+
+    List<Map<String, dynamic>> loadedItems = (jobData['loadedItems'] ?? [])
+        .map<Map<String, dynamic>>((item) => {
+              'barcode': (item['barcode'] ?? '').toString(),
+              'category': (item['category'] ?? '').toString(),
+              'isSent': item['isSent'] == true,
+            })
+        .toList();
+
+    if (isEdit || !isCompleted) {
+      var result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ScanScreen(
+            jobNumber: jobNumber,
+            isCompleted: isCompleted,
+            scannedItems: scannedItems,
+            loadedItems: loadedItems,
+            isLoaded: isLoaded,
+            isStorePickComplete: jobData['isStorePickComplete'] == true,
+            isYardPickComplete: jobData['isYardPickComplete'] == true,
+            hasStockItems: jobData['hasStockItems'] == true,
+            isStockPickComplete: jobData['isStockPickComplete'] == true,
+          ),
+        ),
+      );
+
+      if (result != null) {
+        _updateFirebaseJob(job.id, {
+          'isCompleted': result['isCompleted'] ?? jobData['isCompleted'],
+          'scannedItems': result['scannedItems'],
+          'loadedItems': result['loadedItems'],
+          'isLoaded': result['isLoaded'] ?? jobData['isLoaded'],
+          'isStorePickComplete': result['isStorePickComplete'] ?? jobData['isStorePickComplete'],
+          'isYardPickComplete': result['isYardPickComplete'] ?? jobData['isYardPickComplete'],
+          'hasStockItems': result['hasStockItems'] ?? jobData['hasStockItems'],
+          'isStockPickComplete': result['isStockPickComplete'] ?? jobData['isStockPickComplete'],
+        });
+      }
     } else {
-      _jobStream = jobsCollection
-          .where('jobNumber', isGreaterThanOrEqualTo: query)
-          .where('jobNumber', isLessThan: '${query}Z') // Ensure uppercase search range
-          .snapshots();
+      var result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => LoadScreen(
+            jobNumber: jobNumber,
+            scannedItems: scannedItems,
+            loadedItems: loadedItems,
+            isLoaded: isLoaded,
+            isScanningCompleted: isCompleted,
+          ),
+        ),
+      );
+
+      if (result != null) {
+        loadedItems = result['loadedItems'];
+        isLoaded = result['isLoaded'] ?? isLoaded;
+
+        _updateFirebaseJob(job.id, {
+          'loadedItems': loadedItems,
+          'isLoaded': isLoaded,
+        });
+      }
     }
-  });
-}
+  }
+
+  void _liveSearchJob(String query) {
+    setState(() {
+      query = query.toUpperCase();
+      if (query.isEmpty) {
+        _jobStream = jobsCollection
+            .orderBy('createdAt', descending: true)
+            .snapshots();
+      } else {
+        _jobStream = jobsCollection
+            .where('jobNumber', isGreaterThanOrEqualTo: query)
+            .where('jobNumber', isLessThan: '${query}Z')
+            .snapshots();
+      }
+    });
+  }
 
   Future<void> _deleteJob(String jobId) async {
     final confirm = await showDialog<bool>(
@@ -187,85 +268,10 @@ void _liveSearchJob(String query) {
 
     if (confirm == true) {
       await jobsCollection.doc(jobId).delete();
-      if (mounted) { // Check if mounted
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Job deleted successfully.')),
         );
-      }
-    }
-  }
-
-  Future<void> _openJobScreen(DocumentSnapshot job, {bool isEdit = false}) async {
-    final jobData = job.data() as Map<String, dynamic>;
-    final jobNumber = jobData['jobNumber'] ?? '';
-    bool isCompleted = jobData['isCompleted'] == true;  // This represents isScanningCompleted
-    bool isLoaded = jobData['isLoaded'] == true;
-
-    // Convert scannedItems and loadedItems
-    List<Map<String, dynamic>> scannedItems = (jobData['scannedItems'] ?? [])
-        .map<Map<String, dynamic>>((item) => {
-              'barcode': (item['barcode'] ?? '').toString(),
-              'category': (item['category'] ?? '').toString(),
-            })
-        .toList();
-
-    List<Map<String, dynamic>> loadedItems = (jobData['loadedItems'] ?? [])
-        .map<Map<String, dynamic>>((item) => {
-              'barcode': (item['barcode'] ?? '').toString(),
-              'category': (item['category'] ?? '').toString(),
-              'isSent': item['isSent'] == true,
-            })
-        .toList();
-
-    if (isEdit || !isCompleted) {
-      var result = await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ScanScreen(
-            jobNumber: jobNumber,
-            isCompleted: isCompleted,  // Pass the current isScanningCompleted state
-            scannedItems: scannedItems,
-            loadedItems: loadedItems,
-            isLoaded: isLoaded,
-            isStorePickComplete: jobData['isStorePickComplete'] == true,
-            isYardPickComplete: jobData['isYardPickComplete'] == true,
-          ),
-        ),
-      );
-
-      if (result != null) {
-        _updateFirebaseJob(job.id, {
-          'isCompleted': result['isCompleted'] ?? jobData['isCompleted'],
-          'scannedItems': result['scannedItems'],
-          'loadedItems': result['loadedItems'],
-          'isLoaded': result['isLoaded'] ?? jobData['isLoaded'],
-          'isStorePickComplete': result['isStorePickComplete'] ?? jobData['isStorePickComplete'],
-          'isYardPickComplete': result['isYardPickComplete'] ?? jobData['isYardPickComplete'],
-        });
-      }
-    } else {
-      var result = await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => LoadScreen(
-            jobNumber: jobNumber,
-            scannedItems: scannedItems,
-            loadedItems: loadedItems,
-            isLoaded: isLoaded,
-            isScanningCompleted: isCompleted,  // Pass the isScanningCompleted status to LoadScreen
-          ),
-        ),
-      );
-
-      if (result != null) {
-        loadedItems = result['loadedItems'];
-        isLoaded = result['isLoaded'] ?? isLoaded;
-
-        // Update Firebase with the returned loadedItems and isLoaded status
-        _updateFirebaseJob(job.id, {
-          'loadedItems': loadedItems,
-          'isLoaded': isLoaded,
-        });
       }
     }
   }
@@ -349,92 +355,118 @@ void _liveSearchJob(String query) {
                   }
 
                   final jobs = snapshot.data!.docs;
-                  return jobs.isEmpty
-                      ? const Center(child: Text('No jobs available.'))
-                      : ListView.builder(
-                          itemCount: jobs.length,
-                          itemBuilder: (context, index) {
-                            final job = jobs[index];
-                            final jobData = job.data() as Map<String, dynamic>;
+                  if (jobs.isEmpty) {
+                    return const Center(child: Text('No jobs available.'));
+                  }
 
-                            Color scanningStatusColor = jobData['isCompleted'] ? Colors.green : Color.fromARGB(255, 90, 90, 90);
-                            Color loadingStatusColor = jobData['isLoaded'] ? Colors.green : Color.fromARGB(255, 90, 90, 90);
+                  String? lastDate;
+                  List<Widget> jobList = [];
+                  for (var job in jobs) {
+                    final jobData = job.data() as Map<String, dynamic>;
+                    final createdAtTimestamp = jobData['createdAt'] as Timestamp?;
+                    final createdAtDate = createdAtTimestamp?.toDate();
+                    final formattedDate = createdAtDate != null
+                        ? DateFormat.yMMMd().format(createdAtDate)
+                        : '';
 
-                            return Card(
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8.0),
-                              ),
-                              margin: const EdgeInsets.symmetric(vertical: 4.0),
-                              elevation: 2.0,
-                              child: Padding(
-                                padding: const EdgeInsets.all(8.0),
-                                child: ListTile(
-                                  contentPadding: EdgeInsets.zero,
-                                  title: Text(
-                                    'Job: ${jobData['jobNumber']}',
+                    if (lastDate != formattedDate) {
+                      lastDate = formattedDate;
+                      jobList.add(
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8.0),
+                          child: Text(
+                            formattedDate,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blueGrey,
+                            ),
+                          ),
+                        ),
+                      );
+                    }
+
+                    Color scanningStatusColor = jobData['isCompleted'] ? Colors.green : Color.fromARGB(255, 90, 90, 90);
+                    Color loadingStatusColor = jobData['isLoaded'] ? Colors.green : Color.fromARGB(255, 90, 90, 90);
+
+                    jobList.add(Card(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8.0),
+                      ),
+                      margin: const EdgeInsets.symmetric(vertical: 2.0),
+                      elevation: 1.0,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            'Job: ${jobData['jobNumber']}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 16,
+                            ),
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 4,
+                                    backgroundColor: scanningStatusColor,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Scanning: ${jobData['isCompleted'] ? "Completed" : "Active"}',
                                     style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 16,
+                                      fontSize: 14,
+                                      color: scanningStatusColor,
                                     ),
                                   ),
-                                  subtitle: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          CircleAvatar(
-                                            radius: 4,
-                                            backgroundColor: scanningStatusColor,
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            'Scanning: ${jobData['isCompleted'] ? "Completed" : "Active"}',
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              color: scanningStatusColor,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      Row(
-                                        children: [
-                                          CircleAvatar(
-                                            radius: 4,
-                                            backgroundColor: loadingStatusColor,
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            'Loading: ${jobData['isLoaded'] ? "Completed" : "Active"}',
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              color: loadingStatusColor,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                  onTap: () => _openJobScreen(job),
-                                  trailing: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      IconButton(
-                                        iconSize: 20,
-                                        icon: const Icon(Icons.edit, color: Colors.black),
-                                        onPressed: () => _openJobScreen(job, isEdit: true),
-                                      ),
-                                      IconButton(
-                                        iconSize: 20,
-                                        icon: const Icon(Icons.delete, color: Colors.black),
-                                        onPressed: () => _deleteJob(job.id),
-                                      ),
-                                    ],
-                                  ),
-                                ),
+                                ],
                               ),
-                            );
-                          },
-                        );
+                              Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 4,
+                                    backgroundColor: loadingStatusColor,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Loading: ${jobData['isLoaded'] ? "Completed" : "Active"}',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: loadingStatusColor,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          onTap: () => _openJobScreen(job),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                iconSize: 20,
+                                icon: const Icon(Icons.edit, color: Colors.black),
+                                onPressed: () => _openJobScreen(job, isEdit: true),
+                              ),
+                              IconButton(
+                                iconSize: 20,
+                                icon: const Icon(Icons.delete, color: Colors.black),
+                                onPressed: () => _deleteJob(job.id),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ));
+                  }
+
+                  return ListView(
+                    children: jobList,
+                  );
                 },
               ),
             ),

@@ -34,6 +34,8 @@ class LoadScreenState extends State<LoadScreen> {
   @override
   void initState() {
     super.initState();
+    _fetchLoadedItemsFromFirebase();
+
     loadedItems = List.from(widget.loadedItems.map((item) => {
       'barcode': item['barcode'] ?? '',
       'category': item['category'] ?? '',
@@ -46,7 +48,6 @@ class LoadScreenState extends State<LoadScreen> {
 
     _checkIsLoadedCondition();
 
-    // Request focus on the load text field initially
     WidgetsBinding.instance.addPostFrameCallback((_) {
       loadFocusNode.requestFocus();
     });
@@ -61,7 +62,20 @@ class LoadScreenState extends State<LoadScreen> {
     super.dispose();
   }
 
-  // Method to get category-wise count of loaded and scanned items
+  Future<void> _fetchLoadedItemsFromFirebase() async {
+    final jobDoc = await FirebaseFirestore.instance
+        .collection('jobs')
+        .doc(widget.jobNumber)
+        .get();
+
+    if (jobDoc.exists && mounted) {
+      setState(() {
+        loadedItems = List<Map<String, dynamic>>.from(jobDoc.data()?['loadedItems'] ?? []);
+        isLoaded = jobDoc.data()?['isLoaded'] ?? false;
+      });
+    }
+  }
+
   Map<String, String> _getCategoryCounts() {
     Map<String, int> scannedCounts = {};
     Map<String, int> loadedCounts = {};
@@ -133,15 +147,13 @@ class LoadScreenState extends State<LoadScreen> {
           currentCategory = category;
         });
         _updateFirebase();
-        loadFocusNode.requestFocus(); // Re-request focus after adding an item
-      } else if (scannedItem.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Barcode $barcode not found in scanned items')),
-          );
-        }
+        loadFocusNode.requestFocus();
+      } else if (scannedItem.isEmpty && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Barcode $barcode not found in scanned items')),
+        );
         currentCategory = null;
-        loadFocusNode.requestFocus(); // Re-request focus if item not found
+        loadFocusNode.requestFocus();
       }
     }
     _checkIsLoadedCondition();
@@ -153,7 +165,7 @@ class LoadScreenState extends State<LoadScreen> {
     });
     _updateFirebase();
     _checkIsLoadedCondition();
-    loadFocusNode.requestFocus(); // Re-request focus after deleting an item
+    loadFocusNode.requestFocus();
   }
 
   bool _allItemsSent() {
@@ -173,6 +185,17 @@ class LoadScreenState extends State<LoadScreen> {
     if (!isLoaded || !_canToggleIsLoaded()) {
       setState(() {
         isLoaded = false;
+      });
+    }
+  }
+
+  Future<void> _navigateBack() async {
+    await _updateFirebase();
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (mounted) {
+      Navigator.pop(context, {
+        'loadedItems': loadedItems,
+        'isLoaded': isLoaded,
       });
     }
   }
@@ -215,12 +238,7 @@ class LoadScreenState extends State<LoadScreen> {
         title: Text('Load Items for Job ${widget.jobNumber}'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            Navigator.pop(context, {
-              'loadedItems': loadedItems,
-              'isLoaded': isLoaded,
-            });
-          },
+          onPressed: _navigateBack,
         ),
       ),
       body: Padding(

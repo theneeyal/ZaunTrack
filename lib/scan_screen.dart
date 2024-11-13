@@ -10,6 +10,8 @@ class ScanScreen extends StatefulWidget {
   final bool isLoaded;
   final bool isStorePickComplete;
   final bool isYardPickComplete;
+  final bool hasStockItems;
+  final bool isStockPickComplete;
 
   const ScanScreen({
     super.key,
@@ -20,6 +22,8 @@ class ScanScreen extends StatefulWidget {
     required this.isLoaded,
     this.isStorePickComplete = false,
     this.isYardPickComplete = false,
+    this.hasStockItems = false,
+    this.isStockPickComplete = false,
   });
 
   @override
@@ -28,7 +32,7 @@ class ScanScreen extends StatefulWidget {
 
 class ScanScreenState extends State<ScanScreen> {
   final TextEditingController barcodeController = TextEditingController();
-  final FocusNode barcodeFocusNode = FocusNode(); // To keep the text field focused
+  final FocusNode barcodeFocusNode = FocusNode();
   String? selectedCategory;
   late List<Map<String, dynamic>> scannedItems;
   late List<Map<String, dynamic>> loadedItems;
@@ -36,6 +40,8 @@ class ScanScreenState extends State<ScanScreen> {
   bool isStorePickComplete = false;
   bool isYardPickComplete = false;
   bool isLoaded = false;
+  bool hasStockItems = false;
+  bool isStockPickComplete = false;
 
   @override
   void initState() {
@@ -44,11 +50,12 @@ class ScanScreenState extends State<ScanScreen> {
     isYardPickComplete = widget.isYardPickComplete;
     isLoaded = widget.isLoaded;
     isScanningCompleted = widget.isCompleted;
+    hasStockItems = widget.hasStockItems;
+    isStockPickComplete = widget.isStockPickComplete;
     scannedItems = List.from(widget.scannedItems);
     loadedItems = List.from(widget.loadedItems);
     _checkLoadingConditions();
 
-    // Request focus on the barcode text field initially
     WidgetsBinding.instance.addPostFrameCallback((_) {
       barcodeFocusNode.requestFocus();
     });
@@ -57,7 +64,7 @@ class ScanScreenState extends State<ScanScreen> {
   @override
   void dispose() {
     barcodeController.dispose();
-    barcodeFocusNode.dispose(); // Dispose the FocusNode
+    barcodeFocusNode.dispose();
     super.dispose();
   }
 
@@ -79,6 +86,8 @@ class ScanScreenState extends State<ScanScreen> {
         'isStorePickComplete': isStorePickComplete,
         'isYardPickComplete': isYardPickComplete,
         'isCompleted': isScanningCompleted,
+        'hasStockItems': hasStockItems,
+        'isStockPickComplete': isStockPickComplete,
         'scannedItems': scannedItems,
       });
     } catch (e) {
@@ -90,8 +99,7 @@ class ScanScreenState extends State<ScanScreen> {
     }
   }
 
-  void _openLoadScreen() async {
-    // Await the result from LoadScreen to get updated loadedItems and isLoaded
+  Future<void> _openLoadScreen() async {
     var result = await Navigator.push(
       context,
       MaterialPageRoute(
@@ -105,21 +113,28 @@ class ScanScreenState extends State<ScanScreen> {
       ),
     );
 
-    // Check for results and update state if data was passed back
     if (result != null && mounted) {
       setState(() {
         loadedItems = List<Map<String, dynamic>>.from(result['loadedItems']);
         isLoaded = result['isLoaded'] ?? isLoaded;
       });
-      _updateFirebase(); // Save updates to Firebase
+      _updateFirebase();
     }
   }
 
+  void _toggleStockItems(bool? value) {
+    setState(() {
+      hasStockItems = value ?? false;
+      _updateScanningCompletedStatus();
+    });
+    _updateFirebase();
+  }
+
   void _selectCategory(String category) {
-    if (isStorePickComplete && isYardPickComplete) {
+    if (isStorePickComplete && isYardPickComplete && (!hasStockItems || isStockPickComplete)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Cannot add items when both toggles are complete.')),
+          const SnackBar(content: Text('Cannot add items when all toggles are complete.')),
         );
       }
       return;
@@ -140,13 +155,11 @@ class ScanScreenState extends State<ScanScreen> {
         _checkLoadingConditions();
         _updateFirebase();
       });
-      // Re-request focus after adding an item
       barcodeFocusNode.requestFocus();
     } else if (alreadyScanned && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Item with barcode $barcode has already been scanned.')),
       );
-      // Re-request focus if the item was already scanned
       barcodeFocusNode.requestFocus();
     }
   }
@@ -158,7 +171,6 @@ class ScanScreenState extends State<ScanScreen> {
     });
     _updateFirebase();
     _checkLoadingConditions();
-    // Re-request focus after deleting an item
     barcodeFocusNode.requestFocus();
   }
 
@@ -178,9 +190,17 @@ class ScanScreenState extends State<ScanScreen> {
     });
   }
 
+  void _toggleStockPickStatus(bool value) {
+    setState(() {
+      isStockPickComplete = value;
+      _updateScanningCompletedStatus();
+      _updateFirebase();
+    });
+  }
+
   void _updateScanningCompletedStatus() {
     setState(() {
-      isScanningCompleted = isStorePickComplete && isYardPickComplete;
+      isScanningCompleted = isStorePickComplete && isYardPickComplete && (!hasStockItems || isStockPickComplete);
       _checkLoadingConditions();
     });
   }
@@ -197,6 +217,23 @@ class ScanScreenState extends State<ScanScreen> {
     });
   }
 
+  Future<void> _navigateBack() async {
+    await _updateFirebase();
+    await Future.delayed(const Duration(milliseconds: 500)); 
+    if (mounted) {
+      Navigator.pop(context, {
+        'isCompleted': isScanningCompleted,
+        'scannedItems': scannedItems,
+        'loadedItems': loadedItems,
+        'isLoaded': isLoaded,
+        'isStorePickComplete': isStorePickComplete,
+        'isYardPickComplete': isYardPickComplete,
+        'hasStockItems': hasStockItems,
+        'isStockPickComplete': isStockPickComplete,
+      });
+    }
+  }
+
   String _formatBarcode(String barcode) {
     if (barcode.length <= 3) return barcode;
     return barcode.substring(0, 4) + '*' * (barcode.length - 4);
@@ -204,24 +241,14 @@ class ScanScreenState extends State<ScanScreen> {
 
   @override
   Widget build(BuildContext context) {
-    bool isInputDisabled = isStorePickComplete && isYardPickComplete;
+    bool isInputDisabled = isStorePickComplete && isYardPickComplete && (!hasStockItems || isStockPickComplete);
 
     return Scaffold(
       appBar: AppBar(
         title: Text('Scan Items for Job ${widget.jobNumber}'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            Navigator.pop(context, {
-              'isCompleted': isScanningCompleted,
-              'scannedItems': scannedItems,
-              'loadedItems': loadedItems,
-              'isLoaded': isLoaded,
-              'isStorePickComplete': isStorePickComplete,
-              'isYardPickComplete': isYardPickComplete,
-            });
-            _updateFirebase();
-          },
+          onPressed: _navigateBack,
         ),
       ),
       body: SingleChildScrollView(
@@ -230,6 +257,16 @@ class ScanScreenState extends State<ScanScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              CheckboxListTile(
+                title: const Text(
+                  'Does this job have stock items?',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                value: hasStockItems,
+                onChanged: _toggleStockItems,
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+              const SizedBox(height: 16),
               TextField(
                 controller: barcodeController,
                 focusNode: barcodeFocusNode,
@@ -270,9 +307,7 @@ class ScanScreenState extends State<ScanScreen> {
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 value: isStorePickComplete,
-                onChanged: (value) {
-                  _toggleStorePickStatus(value);
-                },
+                onChanged: _toggleStorePickStatus,
                 activeColor: Colors.green,
                 inactiveThumbColor: Colors.redAccent,
                 inactiveTrackColor: Colors.red[200],
@@ -283,13 +318,23 @@ class ScanScreenState extends State<ScanScreen> {
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 value: isYardPickComplete,
-                onChanged: (value) {
-                  _toggleYardPickStatus(value);
-                },
+                onChanged: _toggleYardPickStatus,
                 activeColor: Colors.green,
                 inactiveThumbColor: Colors.redAccent,
                 inactiveTrackColor: Colors.red[200],
               ),
+              if (hasStockItems)
+                SwitchListTile(
+                  title: const Text(
+                    'Stock Pick Complete',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  value: isStockPickComplete,
+                  onChanged: _toggleStockPickStatus,
+                  activeColor: Colors.green,
+                  inactiveThumbColor: Colors.redAccent,
+                  inactiveTrackColor: Colors.red[200],
+                ),
               const SizedBox(height: 24),
               Text(
                 '${scannedItems.length} Items Scanned:',
