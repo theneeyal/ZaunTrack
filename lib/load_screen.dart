@@ -34,19 +34,9 @@ class LoadScreenState extends State<LoadScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchLoadedItemsFromFirebase();
+    _initializeLoadedItems();
 
-    loadedItems = List.from(widget.loadedItems.map((item) => {
-      'barcode': item['barcode'] ?? '',
-      'category': item['category'] ?? '',
-      'isSent': item['isSent'] == true,
-    }));
-
-    isLoaded = widget.isLoaded;
-    isScanningCompleted = widget.isScanningCompleted;
     loadController.addListener(_onBarcodeChanged);
-
-    _checkIsLoadedCondition();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       loadFocusNode.requestFocus();
@@ -60,6 +50,13 @@ class LoadScreenState extends State<LoadScreen> {
     loadController.dispose();
     loadFocusNode.dispose();
     super.dispose();
+  }
+
+  void _initializeLoadedItems() {
+    loadedItems = List.from(widget.loadedItems);
+    isLoaded = widget.isLoaded;
+    isScanningCompleted = widget.isScanningCompleted;
+    _fetchLoadedItemsFromFirebase();
   }
 
   Future<void> _fetchLoadedItemsFromFirebase() async {

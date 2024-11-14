@@ -60,73 +60,9 @@ class JobScreenState extends State<JobScreen> {
       final query = await jobsCollection.where('jobNumber', isEqualTo: jobNumber).get();
 
       if (query.docs.isNotEmpty) {
-        if (mounted) {
-          showDialog(
-            context: context,
-            builder: (BuildContext context) {
-              return AlertDialog(
-                title: Text('Job Already Exists'),
-                content: Text('Job $jobNumber already exists. Do you want to go to the scan screen?'),
-                actions: <Widget>[
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: Text('Cancel'),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => ScanScreen(
-                            jobNumber: jobNumber,
-                            isCompleted: query.docs.first['isCompleted'] ?? false,
-                            scannedItems: List<Map<String, dynamic>>.from(query.docs.first['scannedItems'] ?? []),
-                            loadedItems: List<Map<String, dynamic>>.from(query.docs.first['loadedItems'] ?? []),
-                            isLoaded: query.docs.first['isLoaded'] ?? false,
-                            isStorePickComplete: query.docs.first['isStorePickComplete'] ?? false,
-                            isYardPickComplete: query.docs.first['isYardPickComplete'] ?? false,
-                            hasStockItems: query.docs.first['hasStockItems'] ?? false,
-                            isStockPickComplete: query.docs.first['isStockPickComplete'] ?? false,
-                          ),
-                        ),
-                      );
-                    },
-                    child: Text('Go to Scan Screen'),
-                  ),
-                ],
-              );
-            },
-          );
-        }
+        _showJobExistsDialog(jobNumber, query.docs.first);
       } else {
-        DateTime createdAt = DateTime.now();
-        try {
-          await jobsCollection.doc(jobNumber).set({
-            'jobNumber': jobNumber,
-            'isCompleted': false,
-            'isLoaded': false,
-            'isDespatched': false,
-            'isStorePickComplete': false,
-            'isYardPickComplete': false,
-            'hasStockItems': false,
-            'isStockPickComplete': false,
-            'loadedItems': [],
-            'scannedItems': [],
-            'createdAt': Timestamp.fromDate(createdAt),
-            'lastModified': FieldValue.serverTimestamp(),
-          });
-
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Created new Job: $jobNumber')),
-            );
-          }
-        } catch (e) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error adding job: $e')),
-          );
-        }
+        await _createNewJob(jobNumber);
       }
       addJobController.clear();
     } else {
@@ -136,16 +72,54 @@ class JobScreenState extends State<JobScreen> {
     }
   }
 
-  Future<void> _updateFirebaseJob(String jobId, Map<String, dynamic> data) async {
-    try {
-      data['lastModified'] = FieldValue.serverTimestamp();
-      await jobsCollection.doc(jobId).update(data);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update job in Firebase: $e')),
+  void _showJobExistsDialog(String jobNumber, DocumentSnapshot existingJobDoc) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Job Already Exists'),
+          content: Text('Job $jobNumber already exists. Do you want to go to the scan screen?'),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _openJobScreen(existingJobDoc, isEdit: true);
+              },
+              child: Text('Go to Scan Screen'),
+            ),
+          ],
         );
-      }
+      },
+    );
+  }
+
+  Future<void> _createNewJob(String jobNumber) async {
+    try {
+      await jobsCollection.doc(jobNumber).set({
+        'jobNumber': jobNumber,
+        'isCompleted': false,
+        'isLoaded': false,
+        'isDespatched': false,
+        'isStorePickComplete': false,
+        'isYardPickComplete': false,
+        'hasStockItems': false,
+        'isStockPickComplete': false,
+        'loadedItems': [],
+        'scannedItems': [],
+        'createdAt': Timestamp.fromDate(DateTime.now()),
+        'lastModified': FieldValue.serverTimestamp(),
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Created new Job: $jobNumber')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error adding job: $e')),
+      );
     }
   }
 
@@ -222,6 +196,19 @@ class JobScreenState extends State<JobScreen> {
           'loadedItems': loadedItems,
           'isLoaded': isLoaded,
         });
+      }
+    }
+  }
+
+  Future<void> _updateFirebaseJob(String jobId, Map<String, dynamic> data) async {
+    try {
+      data['lastModified'] = FieldValue.serverTimestamp();
+      await jobsCollection.doc(jobId).update(data);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update job in Firebase: $e')),
+        );
       }
     }
   }
