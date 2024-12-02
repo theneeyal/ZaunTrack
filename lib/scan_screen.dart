@@ -32,29 +32,75 @@ class ScanScreen extends StatefulWidget {
 
 class ScanScreenState extends State<ScanScreen> {
   final TextEditingController barcodeController = TextEditingController();
+  final TextEditingController notesController = TextEditingController();
   final FocusNode barcodeFocusNode = FocusNode();
+
   String? selectedCategory;
   late List<Map<String, dynamic>> scannedItems;
   late List<Map<String, dynamic>> loadedItems;
+
   bool isScanningCompleted = false;
   bool isStorePickComplete = false;
   bool isYardPickComplete = false;
   bool isLoaded = false;
   bool hasStockItems = false;
   bool isStockPickComplete = false;
+  bool isNotesExpanded = false; // Track if the notes section is expanded
+
+  void _loadJobData() async {
+    try {
+      final jobDoc = await FirebaseFirestore.instance.collection('jobs').doc(widget.jobNumber).get();
+      
+      if (jobDoc.exists) {
+        setState(() {
+          // Safely initialize fields using null-aware operators or provide default values
+          scannedItems = List<Map<String, dynamic>>.from(jobDoc['scannedItems'] ?? []);
+          loadedItems = List<Map<String, dynamic>>.from(jobDoc['loadedItems'] ?? []);
+          isStorePickComplete = jobDoc['isStorePickComplete'] ?? false;
+          isYardPickComplete = jobDoc['isYardPickComplete'] ?? false;
+          isLoaded = jobDoc['isLoaded'] ?? false;
+          isScanningCompleted = jobDoc['isCompleted'] ?? false;
+          hasStockItems = jobDoc['hasStockItems'] ?? false;
+          isStockPickComplete = jobDoc['isStockPickComplete'] ?? false;
+        });
+      } else {
+        debugPrint("Job document does not exist for job number: ${widget.jobNumber}");
+      }
+    } catch (e) {
+      debugPrint("Error loading job data: $e");
+    }
+  }
 
   @override
   void initState() {
     super.initState();
+    
+    // Initialize local states with defaults if needed
+    scannedItems = []; // Provide default empty list
+    loadedItems = [];  // Provide default empty list
     isStorePickComplete = widget.isStorePickComplete;
     isYardPickComplete = widget.isYardPickComplete;
     isLoaded = widget.isLoaded;
     isScanningCompleted = widget.isCompleted;
     hasStockItems = widget.hasStockItems;
     isStockPickComplete = widget.isStockPickComplete;
-    scannedItems = List.from(widget.scannedItems);
-    loadedItems = List.from(widget.loadedItems);
-    _checkLoadingConditions();
+    
+    // Load job data from Firestore
+    _loadJobData();
+
+    // Fetch notes safely with error handling
+    final jobDoc = FirebaseFirestore.instance.collection('jobs').doc(widget.jobNumber);
+    jobDoc.get().then((doc) {
+      if (doc.exists) {
+        // Ensure the notes field exists before accessing it
+        notesController.text = doc.data()?['notes'] ?? "";
+      } else {
+        debugPrint("Document does not exist for job number: ${widget.jobNumber}");
+        notesController.text = ""; // Initialize as empty if document doesn't exist
+      }
+    }).catchError((error) {
+      debugPrint("Error fetching job document: $error");
+    });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       barcodeFocusNode.requestFocus();
@@ -64,6 +110,7 @@ class ScanScreenState extends State<ScanScreen> {
   @override
   void dispose() {
     barcodeController.dispose();
+    notesController.dispose();
     barcodeFocusNode.dispose();
     super.dispose();
   }
@@ -88,7 +135,8 @@ class ScanScreenState extends State<ScanScreen> {
         'isCompleted': isScanningCompleted,
         'hasStockItems': hasStockItems,
         'isStockPickComplete': isStockPickComplete,
-        'scannedItems': scannedItems,
+        'scannedItems': scannedItems,  // Sync entire list instead of using arrayUnion
+        'notes': notesController.text, // Save notes
       });
     } catch (e) {
       if (mounted) {
@@ -96,6 +144,7 @@ class ScanScreenState extends State<ScanScreen> {
           SnackBar(content: Text('Failed to update job in Firebase: $e')),
         );
       }
+      debugPrint("Error updating Firebase: $e");
     }
   }
 
@@ -219,7 +268,7 @@ class ScanScreenState extends State<ScanScreen> {
 
   Future<void> _navigateBack() async {
     await _updateFirebase();
-    await Future.delayed(const Duration(milliseconds: 500)); 
+    await Future.delayed(const Duration(milliseconds: 500));
     if (mounted) {
       Navigator.pop(context, {
         'isCompleted': isScanningCompleted,
@@ -335,6 +384,63 @@ class ScanScreenState extends State<ScanScreen> {
                   inactiveThumbColor: Colors.redAccent,
                   inactiveTrackColor: Colors.red[200],
                 ),
+              const SizedBox(height: 24),
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    isNotesExpanded = !isNotesExpanded; // Toggle expanded state
+                  });
+                },
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[200],
+                        border: Border.all(color: Colors.grey[400]!),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              isNotesExpanded
+                                  ? 'Notes (Click to save and minimize)'
+                                  : 'Add Notes (Click to expand)',
+                              style: const TextStyle(
+                                  fontSize: 16, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          Icon(isNotesExpanded
+                              ? Icons.arrow_drop_up
+                              : Icons.arrow_drop_down),
+                        ],
+                      ),
+                    ),
+                    if (isNotesExpanded)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: TextField(
+                          controller: notesController,
+                          onChanged: (value) {
+                            _updateFirebase(); // Save changes to Firebase on typing
+                          },
+                          maxLines: 4,
+                          minLines: 1,
+                          decoration: InputDecoration(
+                            labelText: 'Enter notes for this job',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            filled: true,
+                            fillColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
               const SizedBox(height: 24),
               Text(
                 '${scannedItems.length} Items Scanned:',

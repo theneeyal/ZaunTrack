@@ -56,6 +56,10 @@ class LoadScreenState extends State<LoadScreen> {
     loadedItems = List.from(widget.loadedItems);
     isLoaded = widget.isLoaded;
     isScanningCompleted = widget.isScanningCompleted;
+
+    // Ensure the scannedItems are preserved
+    widget.scannedItems; // You can use or manipulate it as needed
+
     _fetchLoadedItemsFromFirebase();
   }
 
@@ -193,6 +197,7 @@ class LoadScreenState extends State<LoadScreen> {
       Navigator.pop(context, {
         'loadedItems': loadedItems,
         'isLoaded': isLoaded,
+        'scannedItems': widget.scannedItems,  // Make sure this is included
       });
     }
   }
