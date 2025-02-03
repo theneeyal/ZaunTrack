@@ -138,106 +138,106 @@ class JobScreenState extends State<JobScreen> {
 
   // Open a job for scanning/loading
 // Open a job for scanning/loading
-  Future<void> _openJobScreen(DocumentSnapshot job, {bool isEdit = false}) async {
-    final jobData = job.data() as Map<String, dynamic>;
-    final jobNumber = jobData['jobNumber'] ?? '';
-    bool isCompleted = jobData['isCompleted'] == true;
-    bool isLoaded = jobData['isLoaded'] == true;
+Future<void> _openJobScreen(DocumentSnapshot job, {bool isEdit = false}) async {
+  final jobData = job.data() as Map<String, dynamic>;
+  final jobNumber = jobData['jobNumber'] ?? '';
+  bool isCompleted = jobData['isCompleted'] == true;
+  bool isLoaded = jobData['isLoaded'] == true;
 
-    List<Map<String, dynamic>> scannedItems = (jobData['scannedItems'] ?? [])
-        .map<Map<String, dynamic>>((item) => {
-              'barcode': (item['barcode'] ?? '').toString(),
-              'category': (item['category'] ?? '').toString(),
-            })
-        .toList();
+  List<Map<String, dynamic>> scannedItems = (jobData['scannedItems'] ?? [])
+      .map<Map<String, dynamic>>((item) => {
+            'barcode': (item['barcode'] ?? '').toString(),
+            'category': (item['category'] ?? '').toString(),
+          })
+      .toList();
 
-    List<Map<String, dynamic>> loadedItems = (jobData['loadedItems'] ?? [])
-        .map<Map<String, dynamic>>((item) => {
-              'barcode': (item['barcode'] ?? '').toString(),
-              'category': (item['category'] ?? '').toString(),
-              'isSent': item['isSent'] == true,
-            })
-        .toList();
+  List<Map<String, dynamic>> loadedItems = (jobData['loadedItems'] ?? [])
+      .map<Map<String, dynamic>>((item) => {
+            'barcode': (item['barcode'] ?? '').toString(),
+            'category': (item['category'] ?? '').toString(),
+            'isSent': item['isSent'] == true,
+          })
+      .toList();
 
-    bool isLocked = jobData.containsKey('locked') ? jobData['locked'] == true : false;
+  bool isLocked = jobData.containsKey('locked') ? jobData['locked'] == true : false;
 
-    if (isLocked && !isEdit) {
-      // Prevent accessing the job if it's locked and not in edit mode
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('This job is currently being accessed by another user.')),
-        );
-      }
-      return; // Prevent access if job is locked and not editing
+  if (isLocked && !isEdit) {
+    // Prevent accessing the job if it's locked and not in edit mode
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('This job is currently being accessed by another user.')),
+      );
+    }
+    return; // Prevent access if job is locked and not editing
+  }
+
+  // If we're opening the job for editing, unlock it immediately
+  if (isEdit) {
+    await jobsCollection.doc(job.id).update({
+      'locked': false, // Reset lock to false when editing
+    });
+  }
+
+  // Lock the job when accessed for scanning/loading
+  await jobsCollection.doc(job.id).update({
+    'locked': true,
+  });
+
+  try {
+    var result;
+    if (isEdit || !isCompleted) {
+      result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ScanScreen(
+            jobNumber: jobNumber,
+            isCompleted: isCompleted,
+            scannedItems: scannedItems,
+            loadedItems: loadedItems,
+            isLoaded: isLoaded,
+            isStorePickComplete: jobData['isStorePickComplete'] == true,
+            isYardPickComplete: jobData['isYardPickComplete'] == true,
+            hasStockItems: jobData['hasStockItems'] == true,
+            isStockPickComplete: jobData['isStockPickComplete'] == true,
+          ),
+        ),
+      );
+    } else {
+      result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => LoadScreen(
+            jobNumber: jobNumber,
+            scannedItems: scannedItems,
+            loadedItems: loadedItems,
+            isLoaded: isLoaded,
+            isScanningCompleted: isCompleted,
+          ),
+        ),
+      );
     }
 
-    // If we're opening the job for editing, unlock it immediately
-    if (isEdit) {
-      await jobsCollection.doc(job.id).update({
-        'locked': false, // Reset lock to false when editing
+    if (mounted && result != null) {
+      _updateFirebaseJob(job.id, {
+        'isCompleted': result['isCompleted'] ?? jobData['isCompleted'],
+        'scannedItems': result['scannedItems'],
+        'loadedItems': result['loadedItems'],
+        'isLoaded': result['isLoaded'] ?? jobData['isLoaded'],
+        'isStorePickComplete': result['isStorePickComplete'] ?? jobData['isStorePickComplete'],
+        'isYardPickComplete': result['isYardPickComplete'] ?? jobData['isYardPickComplete'],
+        'hasStockItems': result['hasStockItems'] ?? jobData['hasStockItems'],
+        'isStockPickComplete': result['isStockPickComplete'] ?? jobData['isStockPickComplete'],
       });
     }
-
-    // Lock the job when accessed for scanning/loading
-    await jobsCollection.doc(job.id).update({
-      'locked': true,
-    });
-
-    try {
-      var result;
-      if (isEdit || !isCompleted) {
-        result = await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ScanScreen(
-              jobNumber: jobNumber,
-              isCompleted: isCompleted,
-              scannedItems: scannedItems,
-              loadedItems: loadedItems,
-              isLoaded: isLoaded,
-              isStorePickComplete: jobData['isStorePickComplete'] == true,
-              isYardPickComplete: jobData['isYardPickComplete'] == true,
-              hasStockItems: jobData['hasStockItems'] == true,
-              isStockPickComplete: jobData['isStockPickComplete'] == true,
-            ),
-          ),
-        );
-      } else {
-        result = await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => LoadScreen(
-              jobNumber: jobNumber,
-              scannedItems: scannedItems,
-              loadedItems: loadedItems,
-              isLoaded: isLoaded,
-              isScanningCompleted: isCompleted,
-            ),
-          ),
-        );
-      }
-
-      if (mounted && result != null) {
-        _updateFirebaseJob(job.id, {
-          'isCompleted': result['isCompleted'] ?? jobData['isCompleted'],
-          'scannedItems': result['scannedItems'],
-          'loadedItems': result['loadedItems'],
-          'isLoaded': result['isLoaded'] ?? jobData['isLoaded'],
-          'isStorePickComplete': result['isStorePickComplete'] ?? jobData['isStorePickComplete'],
-          'isYardPickComplete': result['isYardPickComplete'] ?? jobData['isYardPickComplete'],
-          'hasStockItems': result['hasStockItems'] ?? jobData['hasStockItems'],
-          'isStockPickComplete': result['isStockPickComplete'] ?? jobData['isStockPickComplete'],
-        });
-      }
-    } finally {
-      // Unlock the job when leaving the screen
-      if (mounted) {
-        await jobsCollection.doc(job.id).update({
-          'locked': false,
-        });
-      }
+  } finally {
+    // Unlock the job when leaving the screen
+    if (mounted) {
+      await jobsCollection.doc(job.id).update({
+        'locked': false,
+      });
     }
   }
+}
 
   // Update job in Firestore
   Future<void> _updateFirebaseJob(String jobId, Map<String, dynamic> data) async {
