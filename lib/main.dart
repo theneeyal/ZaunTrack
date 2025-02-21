@@ -55,28 +55,23 @@ class JobScreenState extends State<JobScreen> {
   }
 
   // Add new job function
-  Future<void> _addJob() async {
-    String jobNumber = addJobController.text.trim().toUpperCase();
-
-    if (jobNumber.isNotEmpty) {
-      final query = await jobsCollection.where('jobNumber', isEqualTo: jobNumber).get();
-
-      if (query.docs.isNotEmpty) {
-        _showJobExistsDialog(jobNumber, query.docs.first);
+    Future<void> _addJob() async {
+      String jobNumber = addJobController.text.trim().toUpperCase();
+      List<String> jobNumbers = jobNumber.split(" ");
+      if (jobNumbers.isNotEmpty) {
+        for (String job in jobNumbers) {
+          await _createNewJob(job.trim());
+        }
+        addJobController.clear();
       } else {
-        await _createNewJob(jobNumber);
-      }
-      addJobController.clear();
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please enter a job number to add.')),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Please enter a job number to add.')),
+          );
+        }
       }
     }
-  }
 
-  // Show dialog if job exists
   void _showJobExistsDialog(String jobNumber, DocumentSnapshot existingJobDoc) {
     if (mounted) {
       showDialog(
@@ -100,7 +95,7 @@ class JobScreenState extends State<JobScreen> {
             ],
           );
         },
-      );
+      );  
     }
   }
 
@@ -314,7 +309,7 @@ Future<void> _openJobScreen(DocumentSnapshot job, {bool isEdit = false}) async {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('ZaunTrack Job Management'),
+        title: const Text('ZaunTrack Job Management v2.1'),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -434,7 +429,7 @@ Future<void> _openJobScreen(DocumentSnapshot job, {bool isEdit = false}) async {
                         child: ListTile(
                           contentPadding: EdgeInsets.zero,
                           title: Text(
-                            'Job: ${jobData['jobNumber']}',
+                            'Job: ${jobData['jobNumber']}${jobData['locked'] == true ? "  •  " : ""}',
                             style: TextStyle(
                               fontWeight: FontWeight.w600,
                               fontSize: 16,

@@ -35,6 +35,36 @@ class ScanScreenState extends State<ScanScreen> {
   final TextEditingController notesController = TextEditingController();
   final FocusNode barcodeFocusNode = FocusNode();
 
+  Widget _buildToggleSwitch({required String title, required bool value, required Function(bool?) onChanged}) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white, // Background color
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.5),
+            spreadRadius: 1,
+            blurRadius: 3,
+            offset: Offset(0, 3), // Shadow position
+          ),
+        ],
+      ),
+      child: SwitchListTile(
+        title: Text(
+          title,
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        value: value,
+        onChanged: onChanged,
+        activeColor: Colors.green,
+        inactiveThumbColor: Colors.redAccent,
+        inactiveTrackColor: Colors.red[200],
+      ),
+    );
+  }
+
+
   String? selectedCategory;
   late List<Map<String, dynamic>> scannedItems;
   late List<Map<String, dynamic>> loadedItems;
@@ -45,7 +75,7 @@ class ScanScreenState extends State<ScanScreen> {
   bool isLoaded = false;
   bool hasStockItems = false;
   bool isStockPickComplete = false;
-  bool isNotesExpanded = false; // Track if the notes section is expanded
+  bool isNotesExpanded = true; // Track if the notes section is expanded
 
   void _loadJobData() async {
     try {
@@ -284,8 +314,8 @@ class ScanScreenState extends State<ScanScreen> {
   }
 
   String _formatBarcode(String barcode) {
-    if (barcode.length <= 3) return barcode;
-    return barcode.substring(0, 4) + '*' * (barcode.length - 4);
+    if (barcode.length <= 1) return barcode;
+    return '*' * (barcode.length - 0);
   }
 
   @override
@@ -385,66 +415,50 @@ class ScanScreenState extends State<ScanScreen> {
                   inactiveTrackColor: Colors.red[200],
                 ),
               const SizedBox(height: 24),
-              GestureDetector(
-                onTap: () {
-                  setState(() {
-                    isNotesExpanded = !isNotesExpanded; // Toggle expanded state
-                  });
-                },
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[200],
-                        border: Border.all(color: Colors.grey[400]!),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              isNotesExpanded
-                                  ? 'Notes (Click to save and minimize)'
-                                  : 'Add Notes (Click to expand)',
-                              style: const TextStyle(
-                                  fontSize: 16, fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                          Icon(isNotesExpanded
-                              ? Icons.arrow_drop_up
-                              : Icons.arrow_drop_down),
-                        ],
+              // Always visible Notes section
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[200],
+                      border: Border.all(color: Colors.grey[400]!),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text(
+                      'Notes for this job',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                    if (isNotesExpanded)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8.0),
-                        child: TextField(
-                          controller: notesController,
-                          onChanged: (value) {
-                            _updateFirebase(); // Save changes to Firebase on typing
-                          },
-                          maxLines: 4,
-                          minLines: 1,
-                          decoration: InputDecoration(
-                            labelText: 'Enter notes for this job',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            filled: true,
-                            fillColor: Colors.white,
-                          ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: TextField(
+                      controller: notesController,
+                      onChanged: (value) {
+                        _updateFirebase(); // Save changes to Firebase on typing
+                      },
+                      maxLines: 4,
+                      minLines: 1,
+                      decoration: InputDecoration(
+                        labelText: 'Enter notes here',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
+                        filled: true,
+                        fillColor: Colors.white,
                       ),
-                  ],
-                ),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 24),
               Text(
                 '${scannedItems.length} Items Scanned:',
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 10),
               ListView.builder(
@@ -459,7 +473,7 @@ class ScanScreenState extends State<ScanScreen> {
                   return ListTile(
                     title: Text(
                       '$maskedBarcode                 Category: $category',
-                      style: const TextStyle(fontSize: 16),
+                      style: const TextStyle(fontSize: 15),
                     ),
                     trailing: IconButton(
                       icon: const Icon(Icons.delete, color: Colors.red),
