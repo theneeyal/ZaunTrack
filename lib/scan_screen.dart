@@ -317,7 +317,7 @@ class ScanScreenState extends State<ScanScreen> {
     if (barcode.length <= 1) return barcode;
     return '*' * (barcode.length - 0);
   }
-
+  
   @override
   Widget build(BuildContext context) {
     bool isInputDisabled = isStorePickComplete && isYardPickComplete && (!hasStockItems || isStockPickComplete);
@@ -380,80 +380,83 @@ class ScanScreenState extends State<ScanScreen> {
                 ],
               ),
               const SizedBox(height: 16),
-              SwitchListTile(
-                title: const Text(
-                  'Store Pick Complete',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              Container(
+                padding: const EdgeInsets.all(4.0),
+                margin: const EdgeInsets.only(bottom: 8.0),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.green[300] ?? Colors.red),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                value: isStorePickComplete,
-                onChanged: _toggleStorePickStatus,
-                activeColor: Colors.green,
-                inactiveThumbColor: Colors.redAccent,
-                inactiveTrackColor: Colors.red[200],
-              ),
-              SwitchListTile(
-                title: const Text(
-                  'Yard Pick Complete',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                value: isYardPickComplete,
-                onChanged: _toggleYardPickStatus,
-                activeColor: Colors.green,
-                inactiveThumbColor: Colors.redAccent,
-                inactiveTrackColor: Colors.red[200],
-              ),
-              if (hasStockItems)
-                SwitchListTile(
+                child: SwitchListTile(
                   title: const Text(
-                    'Stock Pick Complete',
+                    'Store Pick Complete',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
-                  value: isStockPickComplete,
-                  onChanged: _toggleStockPickStatus,
+                  value: isStorePickComplete,
+                  onChanged: _toggleStorePickStatus,
                   activeColor: Colors.green,
                   inactiveThumbColor: Colors.redAccent,
-                  inactiveTrackColor: Colors.red[200],
+                  inactiveTrackColor: Colors.red[200] ?? Colors.red,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.all(4.0),
+                margin: const EdgeInsets.only(bottom: 8.0),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.green[300] ?? Colors.red),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: SwitchListTile(
+                  title: const Text(
+                    'Yard Pick Complete',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  value: isYardPickComplete,
+                  onChanged: _toggleYardPickStatus,
+                  activeColor: Colors.green,
+                  inactiveThumbColor: Colors.redAccent,
+                  inactiveTrackColor: Colors.red[200] ?? Colors.red,
+                ),
+              ),
+              if (hasStockItems)
+                Container(
+                  padding: const EdgeInsets.all(4.0),
+                  margin: const EdgeInsets.only(bottom: 8.0),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.green[300] ?? Colors.red),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: SwitchListTile(
+                    title: const Text(
+                      'Stock Pick Complete',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    value: isStockPickComplete,
+                    onChanged: _toggleStockPickStatus,
+                    activeColor: Colors.green,
+                    inactiveThumbColor: Colors.redAccent,
+                    inactiveTrackColor: Colors.red[200] ?? Colors.red,
+                  ),
                 ),
               const SizedBox(height: 24),
-              // Always visible Notes section
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[200],
-                      border: Border.all(color: Colors.grey[400]!),
-                      borderRadius: BorderRadius.circular(8),
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: TextField(
+                  controller: notesController,
+                  onChanged: (value) {
+                    _updateFirebase(); // Save changes to Firebase on typing
+                  },
+                  maxLines: 6,
+                  minLines: 2,
+                  decoration: InputDecoration(
+                    labelText: 'Enter Notes for this Job',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(3),
                     ),
-                    child: const Text(
-                      'Notes for this job',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                    filled: true,
+                    fillColor: const Color.fromARGB(255, 255, 255, 255),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8.0),
-                    child: TextField(
-                      controller: notesController,
-                      onChanged: (value) {
-                        _updateFirebase(); // Save changes to Firebase on typing
-                      },
-                      maxLines: 4,
-                      minLines: 1,
-                      decoration: InputDecoration(
-                        labelText: 'Enter notes here',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        filled: true,
-                        fillColor: Colors.white,
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
               const SizedBox(height: 24),
               Text(
@@ -461,7 +464,7 @@ class ScanScreenState extends State<ScanScreen> {
                 style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 10),
-              ListView.builder(
+              ListView.separated(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 itemCount: scannedItems.length,
@@ -472,8 +475,8 @@ class ScanScreenState extends State<ScanScreen> {
                   final category = item['category'];
                   return ListTile(
                     title: Text(
-                      '$maskedBarcode                 Category: $category',
-                      style: const TextStyle(fontSize: 15),
+                      '$maskedBarcode        $category',
+                      style: const TextStyle(fontSize: 18),
                     ),
                     trailing: IconButton(
                       icon: const Icon(Icons.delete, color: Colors.red),
@@ -481,26 +484,32 @@ class ScanScreenState extends State<ScanScreen> {
                     ),
                   );
                 },
+                separatorBuilder: (context, index) => const Divider(),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 25),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
               ElevatedButton(
                 onPressed: _openLoadScreen,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  backgroundColor: Colors.green,
+                  padding: const EdgeInsets.symmetric(vertical: 25),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
                 child: const Text(
-                  'Start Loading',
-                  style: TextStyle(fontSize: 16, color: Colors.white),
+                  '     Start Loading    ',
+                  style: TextStyle(fontSize: 18, color: Colors.white),
                 ),
               ),
             ],
           ),
-        ),
+        ],
+       )
       ),
+    )
     );
   }
 
