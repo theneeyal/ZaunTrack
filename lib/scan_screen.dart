@@ -317,108 +317,68 @@ class ScanScreenState extends State<ScanScreen> {
     if (barcode.length <= 1) return barcode;
     return '*' * (barcode.length - 0);
   }
-  
   @override
   Widget build(BuildContext context) {
-    bool isInputDisabled = isStorePickComplete && isYardPickComplete && (!hasStockItems || isStockPickComplete);
+      bool isInputDisabled = isStorePickComplete && isYardPickComplete && (!hasStockItems || isStockPickComplete);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Scan Items for Job ${widget.jobNumber}'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: _navigateBack,
+      return Scaffold(
+        appBar: AppBar(
+          title: Text('Scan Items for Job ${widget.jobNumber}'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: _navigateBack,
+          ),
         ),
-      ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              CheckboxListTile(
-                title: const Text(
-                  'Does this job have stock items?',
+        body: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                CheckboxListTile(
+                  title: const Text(
+                    'Does this job have stock items?',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  value: hasStockItems,
+                  onChanged: _toggleStockItems,
+                  controlAffinity: ListTileControlAffinity.leading,
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: barcodeController,
+                  focusNode: barcodeFocusNode,
+                  decoration: InputDecoration(
+                    labelText: 'Enter or Scan Barcode',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey[200],
+                  ),
+                  enabled: !isInputDisabled,
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  "Please choose the type of item to be scanned:",
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
-                value: hasStockItems,
-                onChanged: _toggleStockItems,
-                controlAffinity: ListTileControlAffinity.leading,
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: barcodeController,
-                focusNode: barcodeFocusNode,
-                decoration: InputDecoration(
-                  labelText: 'Enter or Scan Barcode',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  filled: true,
-                  fillColor: Colors.grey[200],
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8.0,
+                  runSpacing: 8.0,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    _buildCategoryButton('Mesh'),
+                    _buildCategoryButton('Posts'),
+                    _buildCategoryButton('Gates'),
+                    _buildCategoryButton('Clamp-bars'),
+                    _buildCategoryButton('Railings'),
+                    _buildCategoryButton('Fixings'),
+                    _buildCategoryButton('Other'),
+                  ],
                 ),
-                enabled: !isInputDisabled,
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                "Please choose the type of item to be scanned:",
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8.0,
-                runSpacing: 8.0,
-                alignment: WrapAlignment.center,
-                children: [
-                  _buildCategoryButton('Mesh'),
-                  _buildCategoryButton('Posts'),
-                  _buildCategoryButton('Gates'),
-                  _buildCategoryButton('Clamp-bars'),
-                  _buildCategoryButton('Railings'),
-                  _buildCategoryButton('Fixings'),
-                  _buildCategoryButton('Other'),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(4.0),
-                margin: const EdgeInsets.only(bottom: 8.0),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.green[300] ?? Colors.red),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: SwitchListTile(
-                  title: const Text(
-                    'Store Pick Complete',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                  value: isStorePickComplete,
-                  onChanged: _toggleStorePickStatus,
-                  activeColor: Colors.green,
-                  inactiveThumbColor: Colors.redAccent,
-                  inactiveTrackColor: Colors.red[200] ?? Colors.red,
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.all(4.0),
-                margin: const EdgeInsets.only(bottom: 8.0),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.green[300] ?? Colors.red),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: SwitchListTile(
-                  title: const Text(
-                    'Yard Pick Complete',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                  value: isYardPickComplete,
-                  onChanged: _toggleYardPickStatus,
-                  activeColor: Colors.green,
-                  inactiveThumbColor: Colors.redAccent,
-                  inactiveTrackColor: Colors.red[200] ?? Colors.red,
-                ),
-              ),
-              if (hasStockItems)
+                const SizedBox(height: 16),
                 Container(
                   padding: const EdgeInsets.all(4.0),
                   margin: const EdgeInsets.only(bottom: 8.0),
@@ -428,89 +388,145 @@ class ScanScreenState extends State<ScanScreen> {
                   ),
                   child: SwitchListTile(
                     title: const Text(
-                      'Stock Pick Complete',
+                      'Store Pick Complete',
                       style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                     ),
-                    value: isStockPickComplete,
-                    onChanged: _toggleStockPickStatus,
+                    value: isStorePickComplete,
+                    onChanged: _toggleStorePickStatus,
                     activeColor: Colors.green,
                     inactiveThumbColor: Colors.redAccent,
                     inactiveTrackColor: Colors.red[200] ?? Colors.red,
                   ),
                 ),
-              const SizedBox(height: 24),
-              Padding(
-                padding: const EdgeInsets.only(top: 8.0),
-                child: TextField(
-                  controller: notesController,
-                  onChanged: (value) {
-                    _updateFirebase(); // Save changes to Firebase on typing
+                Container(
+                  padding: const EdgeInsets.all(4.0),
+                  margin: const EdgeInsets.only(bottom: 8.0),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.green[300] ?? Colors.red),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: SwitchListTile(
+                    title: const Text(
+                      'Yard Pick Complete',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    value: isYardPickComplete,
+                    onChanged: _toggleYardPickStatus,
+                    activeColor: Colors.green,
+                    inactiveThumbColor: Colors.redAccent,
+                    inactiveTrackColor: Colors.red[200] ?? Colors.red,
+                  ),
+                ),
+                if (hasStockItems)
+                  Container(
+                    padding: const EdgeInsets.all(4.0),
+                    margin: const EdgeInsets.only(bottom: 8.0),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.green[300] ?? Colors.red),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: SwitchListTile(
+                      title: const Text(
+                        'Stock Pick Complete',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                      value: isStockPickComplete,
+                      onChanged: _toggleStockPickStatus,
+                      activeColor: Colors.green,
+                      inactiveThumbColor: Colors.redAccent,
+                      inactiveTrackColor: Colors.red[200] ?? Colors.red,
+                    ),
+                  ),
+                const SizedBox(height: 20),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: notesController,
+                        maxLines: 6,
+                        minLines: 1,
+                        decoration: InputDecoration(
+                          labelText: 'Enter Notes for this Job',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                          filled: true,
+                          fillColor: const Color.fromARGB(255, 255, 255, 255),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8), // Adds space between the text field and button
+                    ElevatedButton(
+                      onPressed: _updateFirebase, // Direct use of existing method to update Firebase
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20), // Adjusted for visual alignment
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: const Text(
+                        'Save Notes',
+                        style: TextStyle(fontSize: 16, color: Colors.white),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  '${scannedItems.length} Items Scanned:',
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 10),
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: scannedItems.length,
+                  itemBuilder: (context, index) {
+                    final item = scannedItems[index];
+                    final barcode = item['barcode']!;
+                    final maskedBarcode = _formatBarcode(barcode);
+                    final category = item['category'];
+                    return ListTile(
+                      title: Text(
+                        '$maskedBarcode        $category',
+                        style: const TextStyle(fontSize: 18),
+                      ),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.delete, color: Colors.red),
+                        onPressed: () => _deleteScannedItem(barcode),
+                      ),
+                    );
                   },
-                  maxLines: 6,
-                  minLines: 2,
-                  decoration: InputDecoration(
-                    labelText: 'Enter Notes for this Job',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(3),
-                    ),
-                    filled: true,
-                    fillColor: const Color.fromARGB(255, 255, 255, 255),
-                  ),
+                  separatorBuilder: (context, index) => const Divider(),
                 ),
-              ),
-              const SizedBox(height: 24),
-              Text(
-                '${scannedItems.length} Items Scanned:',
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 10),
-              ListView.separated(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: scannedItems.length,
-                itemBuilder: (context, index) {
-                  final item = scannedItems[index];
-                  final barcode = item['barcode']!;
-                  final maskedBarcode = _formatBarcode(barcode);
-                  final category = item['category'];
-                  return ListTile(
-                    title: Text(
-                      '$maskedBarcode        $category',
-                      style: const TextStyle(fontSize: 18),
+                const SizedBox(height: 25),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    ElevatedButton(
+                      onPressed: _openLoadScreen,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        padding: const EdgeInsets.symmetric(vertical: 25),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text(
+                        '     Start Loading    ',
+                        style: TextStyle(fontSize: 18, color: Colors.white),
+                      ),
                     ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.red),
-                      onPressed: () => _deleteScannedItem(barcode),
-                    ),
-                  );
-                },
-                separatorBuilder: (context, index) => const Divider(),
-              ),
-              const SizedBox(height: 25),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-              ElevatedButton(
-                onPressed: _openLoadScreen,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  padding: const EdgeInsets.symmetric(vertical: 25),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                  ],
                 ),
-                child: const Text(
-                  '     Start Loading    ',
-                  style: TextStyle(fontSize: 18, color: Colors.white),
-                ),
-              ),
-            ],
+                const SizedBox(height: 25),
+              ],
+            ),
           ),
-        ],
-       )
-      ),
-    )
-    );
+        ),
+      );
   }
 
   Widget _buildCategoryButton(String category) {
