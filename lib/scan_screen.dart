@@ -314,8 +314,8 @@ class ScanScreenState extends State<ScanScreen> {
   }
 
   String _formatBarcode(String barcode) {
-    if (barcode.length <= 1) return barcode;
-    return '*' * (barcode.length - 0);
+    if (barcode.length <= 3) return barcode;
+    return '*' * (barcode.length - 2);
   }
   @override
   Widget build(BuildContext context) {
@@ -473,7 +473,7 @@ class ScanScreenState extends State<ScanScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
                 Text(
                   '${scannedItems.length} Items Scanned:',
                   style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
@@ -490,7 +490,7 @@ class ScanScreenState extends State<ScanScreen> {
                     final category = item['category'];
                     return ListTile(
                       title: Text(
-                        '$maskedBarcode        $category',
+                        '$maskedBarcode           $category',
                         style: const TextStyle(fontSize: 18),
                       ),
                       trailing: IconButton(
